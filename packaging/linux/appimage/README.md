@@ -1,4 +1,20 @@
-# AppImage packaging notes
+# AppImage packaging
 
-Use the `PyInstaller` output as the application payload, add the desktop entry from
-`packaging/linux/fy-search.desktop`, and package it with your preferred AppImage toolchain.
+AppImage is the recommended first Linux deliverable for `fy_search`.
+
+## Build
+
+```bash
+./packaging/linux/build-pyinstaller.sh
+./packaging/linux/appimage/build.sh
+```
+
+The script:
+
+- uses the PyInstaller output from `dist/fy-search`
+- creates an `AppDir` layout under `dist/appimage/AppDir`
+- installs the shared desktop file and icon
+- creates an `AppRun` launcher
+- runs `appimagetool`
+
+The resulting artifact is written to `dist/appimage/`.

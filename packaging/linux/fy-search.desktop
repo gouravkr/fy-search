@@ -3,5 +3,6 @@ Type=Application
 Name=fy_search
 Comment=Cross-platform desktop file search application
 Exec=fy-search
+Icon=fy-search
 Terminal=false
 Categories=Utility;FileTools;

@@ -1,4 +1,17 @@
-# Debian packaging notes
+# Debian packaging
 
-Use the `PyInstaller` output as the application payload, then wrap it in a `.deb` package with your
-preferred packaging tool and install the desktop file from `packaging/linux/fy-search.desktop`.
+The Debian package installs `fy_search` with this layout:
+
+- application bundle under `/opt/fy-search`
+- launcher symlink at `/usr/bin/fy-search`
+- desktop entry under `/usr/share/applications`
+- icon under `/usr/share/icons/hicolor/scalable/apps`
+
+## Build
+
+```bash
+./packaging/linux/build-pyinstaller.sh
+./packaging/linux/deb/build.sh
+```
+
+The resulting `.deb` is written to `dist/deb/`.
