@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fy-search"
+version = "0.1.0"
+description = "A cross-platform desktop file search application built with Python and PySide6"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [
+    { name = "fy_search contributors" },
+]
+keywords = ["desktop", "file-search", "pyside6", "qt", "windows", "linux"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Win32 (MS Windows)",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Desktop Environment :: File Managers",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "pyside6>=6.8",
+]
+
+[project.gui-scripts]
+fy-search = "fy_search.app:run"
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.15",
+    "watchfiles>=1.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["fy_search"]
+
+[tool.ruff]
+line-length = 160
