@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-BUNDLE_DIR="${PROJECT_ROOT}/dist/fy-search"
+BUNDLE_PATH="${PROJECT_ROOT}/dist/fy-search"
 BUILD_ROOT="${PROJECT_ROOT}/dist/deb"
 PACKAGE_ROOT="${BUILD_ROOT}/fy-search"
 cd "${PROJECT_ROOT}"
@@ -19,8 +19,8 @@ PY
 )"
 ARCHITECTURE="$(dpkg --print-architecture)"
 
-if [[ ! -d "${BUNDLE_DIR}" ]]; then
-  echo "PyInstaller bundle not found at ${BUNDLE_DIR}" >&2
+if [[ ! -e "${BUNDLE_PATH}" ]]; then
+  echo "PyInstaller bundle not found at ${BUNDLE_PATH}" >&2
   echo "Run ./packaging/linux/build-pyinstaller.sh first." >&2
   exit 1
 fi
@@ -38,7 +38,11 @@ mkdir -p \
   "${PACKAGE_ROOT}/usr/share/applications" \
   "${PACKAGE_ROOT}/usr/share/icons/hicolor/scalable/apps"
 
-cp -R "${BUNDLE_DIR}/." "${PACKAGE_ROOT}/opt/fy-search/"
+if [[ -d "${BUNDLE_PATH}" ]]; then
+  cp -R "${BUNDLE_PATH}/." "${PACKAGE_ROOT}/opt/fy-search/"
+else
+  cp "${BUNDLE_PATH}" "${PACKAGE_ROOT}/opt/fy-search/fy-search"
+fi
 ln -s /opt/fy-search/fy-search "${PACKAGE_ROOT}/usr/bin/fy-search"
 cp "${PROJECT_ROOT}/packaging/linux/fy-search.desktop" "${PACKAGE_ROOT}/usr/share/applications/fy-search.desktop"
 cp "${PROJECT_ROOT}/fy_search/assets/fy-search.svg" "${PACKAGE_ROOT}/usr/share/icons/hicolor/scalable/apps/fy-search.svg"

@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-BUNDLE_DIR="${PROJECT_ROOT}/dist/fy-search"
+BUNDLE_PATH="${PROJECT_ROOT}/dist/fy-search"
 APPIMAGE_ROOT="${PROJECT_ROOT}/dist/appimage"
 APPDIR="${APPIMAGE_ROOT}/AppDir"
 cd "${PROJECT_ROOT}"
@@ -18,8 +18,8 @@ print(data["project"]["version"])
 PY
 )"
 
-if [[ ! -d "${BUNDLE_DIR}" ]]; then
-  echo "PyInstaller bundle not found at ${BUNDLE_DIR}" >&2
+if [[ ! -e "${BUNDLE_PATH}" ]]; then
+  echo "PyInstaller bundle not found at ${BUNDLE_PATH}" >&2
   echo "Run ./packaging/linux/build-pyinstaller.sh first." >&2
   exit 1
 fi
@@ -32,7 +32,11 @@ fi
 rm -rf "${APPDIR}"
 mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/share/applications" "${APPDIR}/usr/share/icons/hicolor/scalable/apps"
 
-cp -R "${BUNDLE_DIR}/." "${APPDIR}/usr/bin/"
+if [[ -d "${BUNDLE_PATH}" ]]; then
+  cp -R "${BUNDLE_PATH}/." "${APPDIR}/usr/bin/"
+else
+  cp "${BUNDLE_PATH}" "${APPDIR}/usr/bin/fy-search"
+fi
 cp "${PROJECT_ROOT}/packaging/linux/fy-search.desktop" "${APPDIR}/usr/share/applications/fy-search.desktop"
 cp "${PROJECT_ROOT}/fy_search/assets/fy-search.svg" "${APPDIR}/usr/share/icons/hicolor/scalable/apps/fy-search.svg"
 cp "${PROJECT_ROOT}/fy_search/assets/fy-search.svg" "${APPDIR}/fy-search.svg"

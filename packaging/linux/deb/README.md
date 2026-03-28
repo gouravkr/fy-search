@@ -15,3 +15,5 @@ The Debian package installs `fy_search` with this layout:
 ```
 
 The resulting `.deb` is written to `dist/deb/`.
+
+The build script supports both a one-file PyInstaller executable and a directory-style bundle.
