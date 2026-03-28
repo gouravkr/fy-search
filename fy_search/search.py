@@ -6,6 +6,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
+from stat import ST_MTIME
 from typing import Callable, Literal
 
 
@@ -19,6 +20,7 @@ class SearchOptions:
     search_type: Literal["both", "files", "folders"]
     min_file_size: float | None
     max_file_size: float | None
+    quick_filter_extensions: tuple[str, ...] = ()
 
 
 ProgressCallback = Callable[[int, int], None]
@@ -27,17 +29,26 @@ CancelCallback = Callable[[], bool]
 
 def path_matches_filters(
     *,
-    full_path: str,
-    name: str,
+    entry: os.DirEntry[str],
     pattern: str,
     use_regex: bool,
     search_type: Literal["both", "files", "folders"],
     cutoff_time: float | None,
     min_file_size: float | None,
     max_file_size: float | None,
+    quick_filter_extensions: tuple[str, ...],
     compiled_regex: re.Pattern[str] | None = None,
+    is_dir: bool | None = None,
+    stat_result: os.stat_result | None = None,
 ) -> bool:
-    is_dir = os.path.isdir(full_path)
+    # full_path = entry.path
+    name = entry.name
+
+    if is_dir is None:
+        try:
+            is_dir = entry.is_dir(follow_symlinks=False)
+        except OSError:
+            return False
 
     if use_regex:
         regex = compiled_regex if compiled_regex is not None else re.compile(pattern, re.IGNORECASE)
@@ -51,16 +62,24 @@ def path_matches_filters(
     if not match:
         return False
 
+    if quick_filter_extensions and not is_dir:
+        _, extension = os.path.splitext(name)
+        normalized_extension = extension.lower().lstrip(".")
+        if normalized_extension not in quick_filter_extensions:
+            return False
+
     if cutoff_time is not None:
         try:
-            if os.path.getmtime(full_path) < cutoff_time:
+            stat_result = stat_result or entry.stat(follow_symlinks=False)
+            if stat_result[ST_MTIME] < cutoff_time:
                 return False
         except OSError:
             return False
 
     if not is_dir and (min_file_size is not None or max_file_size is not None):
         try:
-            file_size = os.stat(full_path).st_size
+            stat_result = stat_result or entry.stat(follow_symlinks=False)
+            file_size = stat_result.st_size
         except OSError:
             return False
 
@@ -100,36 +119,50 @@ def iter_search_results(
             return
 
         try:
-            entries = os.listdir(path)
+            with os.scandir(path) as entries:
+                for entry in entries:
+                    if cancel_callback is not None and cancel_callback():
+                        return
+
+                    try:
+                        is_dir = entry.is_dir(follow_symlinks=False)
+                    except OSError:
+                        continue
+
+                    files_checked += 1
+
+                    if files_checked % 100 == 0 and progress_callback is not None:
+                        progress_callback(files_checked, matches_found)
+
+                    stat_result = None
+                    if cutoff_time is not None or (
+                        not is_dir and (options.min_file_size is not None or options.max_file_size is not None)
+                    ):
+                        try:
+                            stat_result = entry.stat(follow_symlinks=False)
+                        except OSError:
+                            stat_result = None
+
+                    if path_matches_filters(
+                        entry=entry,
+                        pattern=options.pattern,
+                        use_regex=options.use_regex,
+                        search_type=options.search_type,
+                        cutoff_time=cutoff_time,
+                        min_file_size=options.min_file_size,
+                        max_file_size=options.max_file_size,
+                        quick_filter_extensions=options.quick_filter_extensions,
+                        compiled_regex=compiled_regex,
+                        is_dir=is_dir,
+                        stat_result=stat_result,
+                    ):
+                        matches_found += 1
+                        yield entry.path
+
+                    if is_dir:
+                        yield from search_directory(entry.path, current_depth + 1)
         except OSError:
             return
-
-        for name in entries:
-            if cancel_callback is not None and cancel_callback():
-                return
-
-            full_path = os.path.join(path, name)
-            files_checked += 1
-
-            if files_checked % 100 == 0 and progress_callback is not None:
-                progress_callback(files_checked, matches_found)
-
-            if path_matches_filters(
-                full_path=full_path,
-                name=name,
-                pattern=options.pattern,
-                use_regex=options.use_regex,
-                search_type=options.search_type,
-                cutoff_time=cutoff_time,
-                min_file_size=options.min_file_size,
-                max_file_size=options.max_file_size,
-                compiled_regex=compiled_regex,
-            ):
-                matches_found += 1
-                yield full_path
-
-            if os.path.isdir(full_path):
-                yield from search_directory(full_path, current_depth + 1)
 
     yield from search_directory(options.root_path, 0)
 

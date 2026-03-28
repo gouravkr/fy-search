@@ -12,17 +12,19 @@ class SearchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             file_path = Path(tmp_dir) / "report.txt"
             file_path.write_text("data", encoding="utf-8")
+            with os.scandir(tmp_dir) as entries:
+                entry = next(iter(entries))
 
             self.assertTrue(
                 path_matches_filters(
-                    full_path=os.fspath(file_path),
-                    name=file_path.name,
+                    entry=entry,
                     pattern="report",
                     use_regex=False,
                     search_type="files",
                     cutoff_time=None,
                     min_file_size=None,
                     max_file_size=None,
+                    quick_filter_extensions=(),
                 )
             )
 
@@ -30,17 +32,19 @@ class SearchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             file_path = Path(tmp_dir) / "large.log"
             file_path.write_text("x" * 20, encoding="utf-8")
+            with os.scandir(tmp_dir) as entries:
+                entry = next(iter(entries))
 
             self.assertFalse(
                 path_matches_filters(
-                    full_path=os.fspath(file_path),
-                    name=file_path.name,
+                    entry=entry,
                     pattern="large",
                     use_regex=False,
                     search_type="files",
                     cutoff_time=None,
                     min_file_size=None,
                     max_file_size=5,
+                    quick_filter_extensions=(),
                 )
             )
 
@@ -59,6 +63,7 @@ class SearchTests(unittest.TestCase):
                 search_type="files",
                 min_file_size=None,
                 max_file_size=None,
+                quick_filter_extensions=(),
             )
 
             results = list(iter_search_results(options))
@@ -82,6 +87,30 @@ class SearchTests(unittest.TestCase):
                 search_type="files",
                 min_file_size=None,
                 max_file_size=None,
+                quick_filter_extensions=(),
             )
 
             self.assertEqual(list(iter_search_results(options)), [])
+
+    def test_iter_search_results_respects_quick_filter_extensions(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / "photo.JPG").write_text("jpg", encoding="utf-8")
+            (tmp_path / "notes.txt").write_text("txt", encoding="utf-8")
+
+            options = SearchOptions(
+                root_path=os.fspath(tmp_path),
+                pattern="",
+                use_regex=False,
+                max_depth=None,
+                days=None,
+                search_type="files",
+                min_file_size=None,
+                max_file_size=None,
+                quick_filter_extensions=("jpg", "png"),
+            )
+
+            results = list(iter_search_results(options))
+
+            self.assertEqual(len(results), 1)
+            self.assertTrue(results[0].endswith("photo.JPG"))
