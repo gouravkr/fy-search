@@ -50,6 +50,12 @@ class ResultRow:
     modified_on: float
 
     @property
+    def extension(self) -> str:
+        if self.is_dir:
+            return ""
+        return normalized_extension(self.name)
+
+    @property
     def display_type(self) -> str:
         return "Folder" if self.is_dir else "File"
 
@@ -118,7 +124,7 @@ class SearchResultModel(QAbstractTableModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._results: List[ResultRow] = []
-        self._headers = ["Name", "Path", "Type", "Size", "Created On", "Modified On"]
+        self._headers = ["Name", "Ext.", "Path", "Type", "Size", "Created On", "Modified On"]
         self.show_full_path = False
         self.root_path = ""
         self.size_format = "Human Readable"
@@ -141,6 +147,8 @@ class SearchResultModel(QAbstractTableModel):
             if col == 0:
                 return row_data.name
             if col == 1:
+                return row_data.extension
+            if col == 2:
                 dir_path = os.path.dirname(row_data.full_path)
                 if self.show_full_path:
                     return dir_path
@@ -148,53 +156,57 @@ class SearchResultModel(QAbstractTableModel):
                     return os.path.relpath(dir_path, self.root_path)
                 except ValueError:
                     return dir_path
-            if col == 2:
-                return row_data.display_type
             if col == 3:
-                return self._format_size(row_data)
+                return row_data.display_type
             if col == 4:
-                return self._format_datetime(row_data.created_on)
+                return self._format_size(row_data)
             if col == 5:
+                return self._format_datetime(row_data.created_on)
+            if col == 6:
                 return self._format_datetime(row_data.modified_on)
 
         if role == Qt.ItemDataRole.EditRole:
             if col == 0:
                 return row_data.name
             if col == 1:
-                return row_data.full_path
+                return row_data.extension
             if col == 2:
-                return row_data.display_type
+                return row_data.full_path
             if col == 3:
-                return self._format_size(row_data)
+                return row_data.display_type
             if col == 4:
-                return self._format_datetime(row_data.created_on)
+                return self._format_size(row_data)
             if col == 5:
+                return self._format_datetime(row_data.created_on)
+            if col == 6:
                 return self._format_datetime(row_data.modified_on)
 
         if role == Qt.ItemDataRole.DecorationRole:
             if col == 0:
                 return self._name_icon(row_data)
-            if col == 2:
+            if col == 3:
                 return self._type_icon(row_data.is_dir)
 
         if role == self.SORT_ROLE:
             if col == 0:
                 return row_data.name.lower()
             if col == 1:
-                return row_data.full_path.lower()
+                return row_data.extension
             if col == 2:
-                return row_data.is_dir
+                return row_data.full_path.lower()
             if col == 3:
-                return row_data.size_bytes if not row_data.is_dir else -1
+                return row_data.is_dir
             if col == 4:
-                return row_data.created_on
+                return row_data.size_bytes if not row_data.is_dir else -1
             if col == 5:
+                return row_data.created_on
+            if col == 6:
                 return row_data.modified_on
 
         if role == Qt.ItemDataRole.ForegroundRole and row_data.is_dir:
             return QColor(34, 139, 34)
 
-        if role == Qt.ItemDataRole.TextAlignmentRole and col == 3:
+        if role == Qt.ItemDataRole.TextAlignmentRole and col in (1, 4):
             return Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
 
         return None
@@ -261,14 +273,14 @@ class SearchResultModel(QAbstractTableModel):
             return
 
         self.show_full_path = show_full_path
-        self._emit_column_changed(1)
+        self._emit_column_changed(2)
 
     def set_size_format(self, size_format: str):
         if self.size_format == size_format:
             return
 
         self.size_format = size_format
-        self._emit_column_changed(3)
+        self._emit_column_changed(4)
 
     def _emit_column_changed(self, column: int):
         if not self._results:
@@ -323,7 +335,7 @@ class SearchResultModel(QAbstractTableModel):
         row_data.full_path = new_full_path
         self.dataChanged.emit(
             self.index(index.row(), 0),
-            self.index(index.row(), 1),
+            self.index(index.row(), 2),
             [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole, self.SORT_ROLE],
         )
         return True
@@ -516,7 +528,7 @@ class FileSearchGUI(QMainWindow):
             return
 
         NAME_COLUMN = 0
-        PATH_COLUMN = 1
+        PATH_COLUMN = 2
 
         if index.column() not in (NAME_COLUMN, PATH_COLUMN):
             return
@@ -721,13 +733,15 @@ class FileSearchGUI(QMainWindow):
         header.setSortIndicatorShown(True)
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
         self.view.setColumnWidth(0, 260)
-        self.view.setColumnWidth(1, 520)
+        self.view.setColumnWidth(1, 56)
+        self.view.setColumnWidth(2, 520)
         header.setStyleSheet(
             """
             QHeaderView::section {

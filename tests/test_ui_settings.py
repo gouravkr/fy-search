@@ -101,7 +101,7 @@ class GuiSettingsTests(unittest.TestCase):
             ResultRow("demo.txt", "/tmp/sub/demo.txt", False, 10, 100.0, 100.0),
         ]
 
-        index = window.model.index(0, 1)
+        index = window.model.index(0, 2)
         self.assertEqual(window.model.data(index, Qt.ItemDataRole.DisplayRole), "sub")
 
         with patch("fy_search.ui.save_settings"):
@@ -117,7 +117,7 @@ class GuiSettingsTests(unittest.TestCase):
             ResultRow("demo.txt", "/tmp/demo.txt", False, 1536, 100.0, 100.0),
         ]
 
-        index = window.model.index(0, 3)
+        index = window.model.index(0, 4)
         self.assertEqual(window.model.data(index, Qt.ItemDataRole.DisplayRole), "1.50 KB")
 
         with patch("fy_search.ui.save_settings"):
@@ -272,7 +272,7 @@ class GuiSettingsTests(unittest.TestCase):
 
             window.model.add_result(file_path)
             name_index = window.proxy_model.index(0, 0)
-            path_index = window.proxy_model.index(0, 1)
+            path_index = window.proxy_model.index(0, 2)
 
             self.assertTrue(window.can_rename_index(name_index))
             self.assertFalse(window.can_rename_index(path_index))
@@ -294,6 +294,18 @@ class GuiSettingsTests(unittest.TestCase):
             self.assertTrue(model.setData(index, "new.txt"))
             self.assertTrue(os.path.exists(renamed_path))
             self.assertEqual(model.data(index, Qt.ItemDataRole.DisplayRole), "new.txt")
+            self.assertEqual(model.data(model.index(0, 1), Qt.ItemDataRole.DisplayRole), "txt")
+
+    def test_extension_column_uses_compact_header_and_value(self):
+        model = SearchResultModel()
+        model._results = [
+            ResultRow("demo.txt", "/tmp/demo.txt", False, 100, 100.0, 100.0),
+            ResultRow("projects", "/tmp/projects", True, 0, 100.0, 100.0),
+        ]
+
+        self.assertEqual(model.headerData(1, Qt.Orientation.Horizontal), "Ext.")
+        self.assertEqual(model.data(model.index(0, 1), Qt.ItemDataRole.DisplayRole), "txt")
+        self.assertEqual(model.data(model.index(1, 1), Qt.ItemDataRole.DisplayRole), "")
 
     def test_type_column_returns_icon_and_text(self):
         model = SearchResultModel()
@@ -302,8 +314,8 @@ class GuiSettingsTests(unittest.TestCase):
             ResultRow("demo", "/tmp/demo", True, 0, 100.0, 100.0),
         ]
 
-        file_index = model.index(0, 2)
-        folder_index = model.index(1, 2)
+        file_index = model.index(0, 3)
+        folder_index = model.index(1, 3)
 
         self.assertEqual(model.data(file_index, Qt.ItemDataRole.DisplayRole), "File")
         self.assertEqual(model.data(folder_index, Qt.ItemDataRole.DisplayRole), "Folder")
