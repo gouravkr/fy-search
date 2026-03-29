@@ -1,23 +1,32 @@
-# fy_search
+# FySearch
 
-`fy_search` is a cross-platform desktop file search application built with Python and `PySide6`.
-It is intended to run on Linux and Windows during development with `uv`, and to be packaged for
-distribution with `PyInstaller`.
+`FySearch` is a cross-platform desktop file search which works seamlessly on Linux and Windows. There's no setup or indexing needed, just launch and start searching.
+
+It is built with Python and packaged for distribution with `PyInstaller`.
 
 ## Features
 
-- Search for files, folders, or both
+- Quickly search for files and folders anywhere on your PC
+- No need for indexing or building a database
 - Plain-text and regular-expression matching
-- Optional depth, age, and size filters
-- Sortable results table with multi-column sorting
-- Cross-platform settings storage
+- Optional folder depth, age, and size filters
+- Sortable results table
+- Clean and modern UI with no distraction, only essential features
 
 ## Development
+
+This application uses uv for dependency management.
 
 Install dependencies:
 
 ```bash
 uv sync --group dev
+```
+
+Run the development hot-reload entrypoint:
+
+```bash
+uv run --group dev python dev_run.py
 ```
 
 Run the production entrypoint:
@@ -26,11 +35,10 @@ Run the production entrypoint:
 uv run python -m fy_search
 ```
 
-Run the development hot-reload entrypoint:
+## Development Guidelines
 
-```bash
-uv run --group dev python dev_run.py
-```
+* This application uses uv for dependency management. It is recommended to use the same to avoid any conflicts.
+* This application uses ruff for linting and formatting
 
 ## Packaging
 
@@ -40,6 +48,8 @@ Create a standalone executable with `PyInstaller`:
 uv sync --group dev
 uv run pyinstaller packaging/pyinstaller/fy_search.spec --clean
 ```
+
+This will generate Linux executable on Linux and .exe file on Windows.
 
 Linux-native formats such as `.deb` and AppImage should be created as a second packaging step on top
 of the built application bundle.

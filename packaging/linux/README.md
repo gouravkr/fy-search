@@ -1,6 +1,6 @@
 # Linux packaging
 
-`fy_search` is packaged for Linux in two stages:
+`FySearch` is packaged for Linux in two stages:
 
 1. Build the self-contained Linux application bundle with `PyInstaller`
 2. Wrap that bundle as either an `AppImage` or a `.deb`

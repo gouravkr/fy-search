@@ -1,6 +1,8 @@
 # AppImage packaging
 
-AppImage is the recommended first Linux deliverable for `fy_search`.
+AppImage is a standalone executable for Linux systems. The `appimage/build.sh` helps create an AppImage of `FySearch` which can be run on Linux distro without installation.
+
+Building using this script requires Appimagetool, which can be downloaded from https://github.com/AppImage/appimagetool/releases
 
 ## Build
 
