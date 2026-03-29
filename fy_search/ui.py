@@ -972,13 +972,14 @@ class FileSearchGUI(QMainWindow):
             "3. Optionally adjust filters in Search Options.\n"
             "4. Press Search to begin.\n"
             "5. Use the context menu on results to open, reveal, or rename items.",
+            "6. You can also double click on file or path columns to open them.",
         )
 
     def show_about(self) -> None:
         QMessageBox.information(
             self,
-            "About fy_search",
-            "fy_search\nA cross-platform desktop file search application built with Python and PySide6.",
+            "About Fy Search",
+            "Fy Search\nA cross-platform desktop file search application built with Python and PySide6.",
         )
 
     @staticmethod
