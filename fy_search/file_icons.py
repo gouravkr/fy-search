@@ -16,7 +16,7 @@ FILE_ICON_MAP = {
     "tif": ("fa5s.file-image", "#0EA5E9"),
     "webp": ("fa5s.file-image", "#0EA5E9"),
     # Audio
-    "mp3": ("fa5s.file-audio", "#10B981"),
+    "mp3": ("fa5s.file-audio", "#10B96D"),
     "aac": ("fa5s.file-audio", "#10B981"),
     "wav": ("fa5s.file-audio", "#10B981"),
     "flac": ("fa5s.file-audio", "#10B981"),

@@ -45,7 +45,7 @@ else
 fi
 ln -s /opt/fy-search/fy-search "${PACKAGE_ROOT}/usr/bin/fy-search"
 cp "${PROJECT_ROOT}/packaging/linux/fy-search.desktop" "${PACKAGE_ROOT}/usr/share/applications/fy-search.desktop"
-cp "${PROJECT_ROOT}/fy_search/assets/fy-search.svg" "${PACKAGE_ROOT}/usr/share/icons/hicolor/scalable/apps/fy-search.svg"
+cp "${PROJECT_ROOT}/fy_search/assets/fysearch.svg" "${PACKAGE_ROOT}/usr/share/icons/hicolor/scalable/apps/fysearch.svg"
 
 cat > "${PACKAGE_ROOT}/DEBIAN/control" <<EOF
 Package: fy-search

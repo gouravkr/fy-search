@@ -985,7 +985,7 @@ class FileSearchGUI(QMainWindow):
             "2. Enter text or a regular expression to search for.\n"
             "3. Optionally adjust filters in Search Options.\n"
             "4. Press Search to begin.\n"
-            "5. Use the context menu on results to open, reveal, or rename items.",
+            "5. Use the context menu on results to open, reveal, or rename items.\n"
             "6. You can also double click on file or path columns to open them.",
         )
 

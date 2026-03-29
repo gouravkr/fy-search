@@ -38,7 +38,7 @@ Then build one of the Linux-native formats:
 ```
 
 The default Linux icon used by both formats lives at
-`fy_search/assets/fy-search.svg`.
+`fy_search/assets/fysearch.svg`.
 
 The wrapper scripts support either PyInstaller output shape:
 

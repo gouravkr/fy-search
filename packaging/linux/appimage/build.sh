@@ -38,8 +38,8 @@ else
   cp "${BUNDLE_PATH}" "${APPDIR}/usr/bin/fy-search"
 fi
 cp "${PROJECT_ROOT}/packaging/linux/fy-search.desktop" "${APPDIR}/usr/share/applications/fy-search.desktop"
-cp "${PROJECT_ROOT}/fy_search/assets/fy-search.svg" "${APPDIR}/usr/share/icons/hicolor/scalable/apps/fy-search.svg"
-cp "${PROJECT_ROOT}/fy_search/assets/fy-search.svg" "${APPDIR}/fy-search.svg"
+cp "${PROJECT_ROOT}/fy_search/assets/fysearch.svg" "${APPDIR}/usr/share/icons/hicolor/scalable/apps/fysearch.svg"
+cp "${PROJECT_ROOT}/fy_search/assets/fysearch.svg" "${APPDIR}/fysearch.svg"
 
 cat > "${APPDIR}/AppRun" <<'EOF'
 #!/usr/bin/env bash
