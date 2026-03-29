@@ -11,7 +11,8 @@ from typing import Any
 
 APP_NAME = "fy_search"
 SETTINGS_FILENAME = "settings.json"
-NO_QUICK_FILTER = "All"
+NO_QUICK_FILTER = "Everything"
+LEGACY_NO_QUICK_FILTER = "All"
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,7 @@ class QuickFilters:
         return [NO_QUICK_FILTER, *self.filters.keys()]
 
     def extensions_for(self, filter_name: str) -> tuple[str, ...]:
-        if filter_name == NO_QUICK_FILTER:
+        if filter_name in (NO_QUICK_FILTER, LEGACY_NO_QUICK_FILTER):
             return ()
         return self.filters.get(filter_name, ())
 
@@ -95,6 +96,8 @@ class AppSettings:
         quick_filters = QuickFilters.from_dict(data.get("quick_filters", QuickFilters.defaults().to_dict()))
 
         selected_quick_filter = selected_quick_filter if isinstance(selected_quick_filter, str) else NO_QUICK_FILTER
+        if selected_quick_filter == LEGACY_NO_QUICK_FILTER:
+            selected_quick_filter = NO_QUICK_FILTER
         if selected_quick_filter != NO_QUICK_FILTER and selected_quick_filter not in quick_filters.filters:
             selected_quick_filter = NO_QUICK_FILTER
 

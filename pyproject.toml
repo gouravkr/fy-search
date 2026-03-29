@@ -28,6 +28,7 @@ classifiers = [
 ]
 dependencies = [
     "pyside6>=6.8",
+    "qtawesome>=1.4.1",
 ]
 
 [project.gui-scripts]

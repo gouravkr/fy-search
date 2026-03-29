@@ -36,13 +36,13 @@ class GuiSettingsTests(unittest.TestCase):
 
         self.assertEqual(window.path_input.text(), "/tmp/demo")
         self.assertEqual(window.depth_spin.value(), 7)
-        self.assertTrue(window.full_path_check.isChecked())
+        self.assertTrue(window.show_full_path_action.isChecked())
         self.assertEqual(window.search_type_combo.currentText(), "Folders Only")
         self.assertEqual(window.pattern_type_combo.currentText(), "Regular Expression")
         self.assertEqual(window.quick_filter_combo.currentText(), "Images")
         self.assertEqual(window.min_size_unit.currentText(), "MB")
         self.assertEqual(window.max_size_unit.currentText(), "GB")
-        self.assertEqual(window.size_format_combo.currentText(), "Bytes")
+        self.assertEqual(window.current_size_format(), "Bytes")
         self.assertEqual(window.quick_filter_combo.count(), 3)
         window.close()
 
@@ -53,13 +53,13 @@ class GuiSettingsTests(unittest.TestCase):
         with patch("fy_search.ui.save_settings"):
             window.path_input.setText("/tmp/project")
             window.depth_spin.setValue(4)
-            window.full_path_check.setChecked(True)
+            window.show_full_path_action.setChecked(True)
             window.search_type_combo.setCurrentText("Files Only")
             window.pattern_type_combo.setCurrentText("Regular Expression")
             window.quick_filter_combo.setCurrentText("Images")
             window.min_size_unit.setCurrentText("KB")
             window.max_size_unit.setCurrentText("GB")
-            window.size_format_combo.setCurrentText("Bytes")
+            window.apply_size_format_setting("Bytes")
 
         with patch("fy_search.ui.save_settings") as save_mock:
             window.save_settings()
@@ -105,7 +105,7 @@ class GuiSettingsTests(unittest.TestCase):
         self.assertEqual(window.model.data(index, Qt.ItemDataRole.DisplayRole), "sub")
 
         with patch("fy_search.ui.save_settings"):
-            window.full_path_check.setChecked(True)
+            window.show_full_path_action.setChecked(True)
         self.assertEqual(window.model.data(index, Qt.ItemDataRole.DisplayRole), "/tmp/sub")
         window.close()
 
@@ -121,8 +121,47 @@ class GuiSettingsTests(unittest.TestCase):
         self.assertEqual(window.model.data(index, Qt.ItemDataRole.DisplayRole), "1.50 KB")
 
         with patch("fy_search.ui.save_settings"):
-            window.size_format_combo.setCurrentText("Bytes")
+            window.apply_size_format_setting("Bytes")
         self.assertEqual(window.model.data(index, Qt.ItemDataRole.DisplayRole), "1,536 B")
+        window.close()
+
+    def test_menu_bar_has_file_options_and_help_menus(self):
+        with patch("fy_search.ui.load_settings", return_value=AppSettings()):
+            window = FileSearchGUI()
+
+        menu_titles = [action.text() for action in window.menuBar().actions()]
+        self.assertEqual(menu_titles, ["File", "Options", "Help"])
+        window.close()
+
+    def test_options_menu_reflects_settings_state(self):
+        with patch(
+            "fy_search.ui.load_settings",
+            return_value=AppSettings(full_path=True, size_format="Bytes"),
+        ):
+            window = FileSearchGUI()
+
+        self.assertTrue(window.show_full_path_action.isChecked())
+        self.assertEqual(window.current_size_format(), "Bytes")
+        window.close()
+
+    def test_context_menu_has_polished_stylesheet(self):
+        with patch("fy_search.ui.load_settings", return_value=AppSettings()):
+            window = FileSearchGUI()
+
+        menu = window._create_context_menu()
+        stylesheet = menu.styleSheet()
+
+        self.assertIn("border-radius: 10px", stylesheet)
+        self.assertIn("QMenu::item:selected", stylesheet)
+        self.assertIn("padding: 8px 14px", stylesheet)
+        window.close()
+
+    def test_results_table_uses_alternating_row_colors(self):
+        with patch("fy_search.ui.load_settings", return_value=AppSettings()):
+            window = FileSearchGUI()
+
+        self.assertTrue(window.view.alternatingRowColors())
+        self.assertFalse(window.view.showGrid())
         window.close()
 
     def test_search_path_input_has_directory_completer(self):
@@ -135,6 +174,43 @@ class GuiSettingsTests(unittest.TestCase):
         self.assertEqual(completer.completionMode(), completer.CompletionMode.PopupCompletion)
         self.assertTrue(completer.model().filter() & QDir.Filter.AllDirs)
         self.assertTrue(completer.model().filter() & QDir.Filter.Drives)
+        window.close()
+
+    def test_search_path_input_has_folder_icon_action(self):
+        with patch("fy_search.ui.load_settings", return_value=AppSettings()):
+            window = FileSearchGUI()
+
+        actions = window.path_input.actions()
+        self.assertEqual(len(actions), 1)
+        self.assertFalse(actions[0].icon().isNull())
+        self.assertFalse(window.browse_btn.icon().isNull())
+        window.close()
+
+    def test_search_input_has_search_icon_action(self):
+        with patch("fy_search.ui.load_settings", return_value=AppSettings()):
+            window = FileSearchGUI()
+
+        actions = window.pattern_input.actions()
+        self.assertEqual(len(actions), 1)
+        self.assertFalse(actions[0].icon().isNull())
+        window.close()
+
+    def test_search_input_has_focus_when_window_shows(self):
+        with patch("fy_search.ui.load_settings", return_value=AppSettings()):
+            window = FileSearchGUI()
+
+        window.show()
+        self.app.processEvents()
+
+        self.assertIs(window.focusWidget(), window.pattern_input)
+        window.close()
+
+    def test_quick_filter_defaults_to_everything(self):
+        with patch("fy_search.ui.load_settings", return_value=AppSettings()):
+            window = FileSearchGUI()
+
+        self.assertEqual(window.quick_filter_combo.itemText(0), NO_QUICK_FILTER)
+        self.assertEqual(window.quick_filter_combo.currentText(), NO_QUICK_FILTER)
         window.close()
 
     def test_directory_path_completer_returns_full_directory_path(self):
@@ -218,6 +294,21 @@ class GuiSettingsTests(unittest.TestCase):
             self.assertTrue(model.setData(index, "new.txt"))
             self.assertTrue(os.path.exists(renamed_path))
             self.assertEqual(model.data(index, Qt.ItemDataRole.DisplayRole), "new.txt")
+
+    def test_type_column_returns_icon_and_text(self):
+        model = SearchResultModel()
+        model._results = [
+            ResultRow("demo.txt", "/tmp/demo.txt", False, 100, 100.0, 100.0),
+            ResultRow("demo", "/tmp/demo", True, 0, 100.0, 100.0),
+        ]
+
+        file_index = model.index(0, 2)
+        folder_index = model.index(1, 2)
+
+        self.assertEqual(model.data(file_index, Qt.ItemDataRole.DisplayRole), "File")
+        self.assertEqual(model.data(folder_index, Qt.ItemDataRole.DisplayRole), "Folder")
+        self.assertFalse(model.data(file_index, Qt.ItemDataRole.DecorationRole).isNull())
+        self.assertFalse(model.data(folder_index, Qt.ItemDataRole.DecorationRole).isNull())
 
     def test_rename_delegate_does_not_commit_without_enter(self):
         model = SearchResultModel()

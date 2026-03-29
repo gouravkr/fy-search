@@ -3,29 +3,15 @@
 from __future__ import annotations
 
 import os
-import subprocess
-import sys
 from dataclasses import dataclass
 from typing import List
 
-from PySide6.QtCore import (
-    QAbstractTableModel,
-    QDateTime,
-    QDir,
-    QEvent,
-    QLocale,
-    QModelIndex,
-    QSortFilterProxyModel,
-    Qt,
-    QThread,
-    QUrl,
-    Signal,
-)
-from PySide6.QtGui import QColor, QDesktopServices, QIntValidator, QKeyEvent, QKeySequence, QShortcut
+import qtawesome as qta
+from PySide6.QtCore import QAbstractTableModel, QDateTime, QDir, QEvent, QLocale, QModelIndex, QSortFilterProxyModel, Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QApplication,
-    QCheckBox,
     QComboBox,
     QCompleter,
     QFileDialog,
@@ -39,6 +25,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QStyledItemDelegate,
     QTableView,
@@ -101,9 +88,7 @@ class RenameDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         editor = RenameLineEdit(parent)
         editor.commit_requested.connect(lambda: self._commit_and_close(editor))
-        editor.cancel_requested.connect(
-            lambda: self.closeEditor.emit(editor, QAbstractItemDelegate.EndEditHint.RevertModelCache)
-        )
+        editor.cancel_requested.connect(lambda: self.closeEditor.emit(editor, QAbstractItemDelegate.EndEditHint.RevertModelCache))
         return editor
 
     def setEditorData(self, editor, index):
@@ -184,6 +169,9 @@ class SearchResultModel(QAbstractTableModel):
             if col == 5:
                 return self._format_datetime(row_data.modified_on)
 
+        if role == Qt.ItemDataRole.DecorationRole and col == 2:
+            return self._type_icon(row_data.is_dir)
+
         if role == self.SORT_ROLE:
             if col == 0:
                 return row_data.name.lower()
@@ -237,6 +225,11 @@ class SearchResultModel(QAbstractTableModel):
     def _format_datetime(self, timestamp: float) -> str:
         dt = QDateTime.fromMSecsSinceEpoch(int(timestamp * 1000))
         return self._locale.toString(dt, QLocale.FormatType.ShortFormat)
+
+    def _type_icon(self, is_dir: bool):
+        icon_name = "fa5s.folder" if is_dir else "fa5s.file-alt"
+        color = "#D97706" if is_dir else "#64748B"
+        return qta.icon(icon_name, color=color)
 
     def clear(self):
         self.beginResetModel()
@@ -345,11 +338,7 @@ class MultiSortProxyModel(QSortFilterProxyModel):
 
     def toggle_sort_column(self, column, add_to_existing=False):
         current_order = next((order for c, order in self._sort_columns if c == column), None)
-        next_order = (
-            Qt.SortOrder.DescendingOrder
-            if current_order == Qt.SortOrder.AscendingOrder
-            else Qt.SortOrder.AscendingOrder
-        )
+        next_order = Qt.SortOrder.DescendingOrder if current_order == Qt.SortOrder.AscendingOrder else Qt.SortOrder.AscendingOrder
 
         if add_to_existing:
             self.append_sort_column(column, next_order)
@@ -452,6 +441,7 @@ class FileSearchGUI(QMainWindow):
 
         self.init_ui()
         self.load_settings()
+        QTimer.singleShot(0, self.focus_search_input)
 
     def show_context_menu(self, pos):
         index = self.view.indexAt(pos)
@@ -461,17 +451,45 @@ class FileSearchGUI(QMainWindow):
         source_index = self.proxy_model.mapToSource(index)
         result_row = self.model._results[source_index.row()]
 
-        menu = QMenu(self)
+        menu = self._create_context_menu()
+
         open_action = menu.addAction("Open")
-        open_action.triggered.connect(lambda: (QDesktopServices.openUrl(QUrl.fromLocalFile(result_row.full_path))))
+        open_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(result_row.full_path)))
         show_in_folder_action = menu.addAction("Show in Folder")
-        show_in_folder_action.triggered.connect(
-            lambda: (QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(result_row.full_path))))
-        )
+        show_in_folder_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(result_row.full_path))))
         if self.can_rename_index(index):
             rename_action = menu.addAction("Rename")
             rename_action.triggered.connect(lambda: self.begin_rename(index))
         menu.exec(self.view.viewport().mapToGlobal(pos))
+
+    def _create_context_menu(self) -> QMenu:
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            """
+            QMenu {
+                background-color: #FFFFFF;
+                border: 1px solid #E2E8F0;
+                border-radius: 4px;
+                padding: 2px;
+            }
+            QMenu::item {
+                padding: 4px 6px;
+                margin: 2px 0;
+                border-radius: 2px;
+                background-color: transparent;
+            }
+            QMenu::item:selected {
+                background-color: #EFF6FF;
+                color: #0F172A;
+            }
+            QMenu::separator {
+                height: 1px;
+                margin: 2px 4px;
+                background: #E5E7EB;
+            }
+            """
+        )
+        return menu
 
     def on_double_click(self, index):
         if not index.isValid():
@@ -484,7 +502,7 @@ class FileSearchGUI(QMainWindow):
             return
 
         source_index = self.proxy_model.mapToSource(index)
-        
+
         if source_index.column() == NAME_COLUMN:
             result_row = self.model._results[source_index.row()]
             QDesktopServices.openUrl(QUrl.fromLocalFile(result_row.full_path))
@@ -503,110 +521,147 @@ class FileSearchGUI(QMainWindow):
         self.view.edit(index)
 
     def init_ui(self):
+        self._create_menu_bar()
+
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
+        main_layout.setSpacing(8)
 
-        path_layout = QHBoxLayout()
-        path_layout.addWidget(QLabel("Search Path:"))
+        ## Path and Search box
+        top_controls_layout = QHBoxLayout()
+        top_controls_layout.setSpacing(0)
+        top_controls_layout.addWidget(QLabel("Path:"))
+        top_controls_layout.addSpacing(8)
         self.path_input = QLineEdit(os.path.expanduser("~"))
+        self.path_input.addAction(qta.icon("fa5s.folder", color="#64748B"), QLineEdit.ActionPosition.LeadingPosition)
+
         self.path_completer = DirectoryPathCompleter(self)
         self.path_input.setCompleter(self.path_completer)
-        path_layout.addWidget(self.path_input)
-        self.browse_btn = QPushButton("Browse...")
+        top_controls_layout.addWidget(self.path_input, 5)
+        self.browse_btn = QPushButton("")
+        self.browse_btn.setIcon(qta.icon("fa5s.folder-open", color="#475569"))
         self.browse_btn.clicked.connect(self.browse_path)
         self._register_enter_activated_button(self.browse_btn)
-        path_layout.addWidget(self.browse_btn)
+        top_controls_layout.addWidget(self.browse_btn)
+        top_controls_layout.addSpacing(16)
 
-        self.quick_filter_combo = QComboBox()
-        path_layout.addWidget(QLabel("Quick Filter:"))
-        path_layout.addWidget(self.quick_filter_combo)
-
-        main_layout.addLayout(path_layout)
-
-        pattern_layout = QHBoxLayout()
-        pattern_layout.addWidget(QLabel("Search for:"))
+        # Search input
         self.pattern_input = QLineEdit()
+        self.pattern_input.addAction(qta.icon("fa5s.search", color="#64748B"), QLineEdit.ActionPosition.LeadingPosition)
         self.pattern_input.setPlaceholderText("Enter file/folder name or regex...")
         self.pattern_input.returnPressed.connect(self.perform_search)
-        pattern_layout.addWidget(self.pattern_input)
+        top_controls_layout.addWidget(self.pattern_input, 3)
 
+        self.quick_filter_combo = QComboBox()
+        top_controls_layout.addWidget(self.quick_filter_combo)
+
+        top_controls_layout.addSpacing(16)
         self.search_btn = QPushButton("Search")
         self.search_btn.clicked.connect(self.perform_search)
         self._register_enter_activated_button(self.search_btn)
-        pattern_layout.addWidget(self.search_btn)
+        top_controls_layout.addWidget(self.search_btn)
+        main_layout.addLayout(top_controls_layout)
+
+        tools_group = QGroupBox("Search Options")
+        tools_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        tools_layout = QVBoxLayout(tools_group)
+
+        row1 = QHBoxLayout()
+        row1.setAlignment(Qt.AlignJustify)
+
+        type_layout = QVBoxLayout()
+        self.search_type_combo = QComboBox()
+        self.search_type_combo.addItems(["Files and Folders", "Files Only", "Folders Only"])
+        type_layout.addWidget(QLabel("Type:"))
+        type_layout.addWidget(self.search_type_combo)
+        row1.addLayout(type_layout)
+        row1.addStretch()
+
+        match_type_layout = QVBoxLayout()
+        self.pattern_type_combo = QComboBox()
+        self.pattern_type_combo.addItems(["Name Match", "Regular Expression"])
+        match_type_layout.addWidget(QLabel("Pattern:"))
+        match_type_layout.addWidget(self.pattern_type_combo)
+        row1.addLayout(match_type_layout)
+        row1.addStretch()
+
+        min_file_size_layout = QVBoxLayout()
+        self.min_file_size = QSpinBox(minimum=0, maximum=1023, singleStep=10)
+        self.min_file_size.setFixedWidth(self.min_file_size.fontMetrics().horizontalAdvance("9999") + 24)
+        min_file_size_layout.addWidget(QLabel("Min File Size:"))
+
+        min_input_layout = QHBoxLayout()
+        min_input_layout.setSpacing(0)
+        min_input_layout.setContentsMargins(0, 0, 0, 0)
+        min_input_layout.addWidget(self.min_file_size)
+        self.min_size_unit = QComboBox()
+        self.min_size_unit.addItems(["Bytes", "KB", "MB", "GB"])
+        min_input_layout.addWidget(self.min_size_unit)
+        min_file_size_layout.addLayout(min_input_layout)
+        row1.addLayout(min_file_size_layout)
+        row1.addStretch()
+
+        max_file_size_layout = QVBoxLayout()
+        self.max_file_size = QSpinBox(minimum=0, maximum=1023, singleStep=10)
+        self.max_file_size.setFixedWidth(self.max_file_size.fontMetrics().horizontalAdvance("9999") + 24)
+        max_file_size_layout.addWidget(QLabel("Max File Size:"))
+
+        max_input_layout = QHBoxLayout()
+        max_input_layout.setSpacing(0)
+        max_input_layout.setContentsMargins(0, 0, 0, 0)
+        max_input_layout.addWidget(self.max_file_size)
+        self.max_size_unit = QComboBox()
+        self.max_size_unit.addItems(["Bytes", "KB", "MB", "GB"])
+        max_input_layout.addWidget(self.max_size_unit)
+        max_file_size_layout.addLayout(max_input_layout)
+        row1.addLayout(max_file_size_layout)
+        row1.addStretch()
+
+        max_depth_layout = QVBoxLayout()
+        self.depth_spin = QSpinBox()
+        self.depth_spin.setRange(0, 100)
+        max_depth_layout.addWidget(QLabel("Max Depth:"))
+        max_depth_layout.addWidget(self.depth_spin)
+        row1.addLayout(max_depth_layout)
+        row1.addStretch()
+
+        modified_days_layout = QVBoxLayout()
+        self.days_spin = QSpinBox(suffix=" days")
+        self.days_spin.setRange(0, 9999)
+        modified_days_layout.addWidget(QLabel("Last Modified Within:"))
+        modified_days_layout.addWidget(self.days_spin)
+        row1.addLayout(modified_days_layout)
+        row1.addStretch()
+
+        tools_layout.addLayout(row1)
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self.cancel_search)
         self.cancel_btn.setEnabled(False)
         self._register_enter_activated_button(self.cancel_btn)
-        pattern_layout.addWidget(self.cancel_btn)
 
         self.reset_sort_btn = QPushButton("Reset Sort")
         self.reset_sort_btn.clicked.connect(self.reset_sort)
         self._register_enter_activated_button(self.reset_sort_btn)
-        pattern_layout.addWidget(self.reset_sort_btn)
-        main_layout.addLayout(pattern_layout)
 
-        tools_group = QGroupBox("Search Options")
-        tools_layout = QVBoxLayout(tools_group)
+        options_layout = QHBoxLayout()
+        options_layout.setContentsMargins(0, 0, 0, 0)
+        options_layout.setSpacing(12)
+        options_layout.addWidget(tools_group, 1)
+        side_actions_widget = QWidget()
+        side_actions_widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        side_actions_layout = QVBoxLayout(side_actions_widget)
+        side_actions_layout.setContentsMargins(0, 0, 0, 0)
+        side_actions_layout.setSpacing(8)
+        side_actions_layout.addWidget(self.cancel_btn)
+        side_actions_layout.addWidget(self.reset_sort_btn)
+        options_layout.addWidget(side_actions_widget, 0, Qt.AlignmentFlag.AlignBottom)
 
-        row1 = QHBoxLayout()
-        self.search_type_combo = QComboBox()
-        self.search_type_combo.addItems(["Files and Folders", "Files Only", "Folders Only"])
-        row1.addWidget(QLabel("Type:"))
-        row1.addWidget(self.search_type_combo)
-
-        self.pattern_type_combo = QComboBox()
-        self.pattern_type_combo.addItems(["Name Match", "Regular Expression"])
-        row1.addWidget(QLabel("Pattern:"))
-        row1.addWidget(self.pattern_type_combo)
-
-        self.min_file_size = QLineEdit()
-        self.min_file_size.setValidator(QIntValidator(0, 999999999, self))
-        self.min_file_size.setFixedWidth(self.min_file_size.fontMetrics().horizontalAdvance("999") + 24)
-        row1.addWidget(QLabel("Min File Size:"))
-        row1.addWidget(self.min_file_size)
-        self.min_size_unit = QComboBox()
-        self.min_size_unit.addItems(["Bytes", "KB", "MB", "GB"])
-        row1.addWidget(self.min_size_unit)
-
-        self.max_file_size = QLineEdit()
-        self.max_file_size.setValidator(QIntValidator(0, 999999999, self))
-        self.max_file_size.setFixedWidth(self.max_file_size.fontMetrics().horizontalAdvance("999") + 24)
-        row1.addWidget(QLabel("Max File Size:"))
-        row1.addWidget(self.max_file_size)
-        self.max_size_unit = QComboBox()
-        self.max_size_unit.addItems(["Bytes", "KB", "MB", "GB"])
-        row1.addWidget(self.max_size_unit)
-
-        row1.addStretch()
-        tools_layout.addLayout(row1)
-
-        row2 = QHBoxLayout()
-        self.depth_spin = QSpinBox()
-        self.depth_spin.setRange(0, 100)
-        row2.addWidget(QLabel("Max Depth:"))
-        row2.addWidget(self.depth_spin)
-
-        self.days_spin = QSpinBox()
-        self.days_spin.setRange(0, 9999)
-        row2.addWidget(QLabel("Days:"))
-        row2.addWidget(self.days_spin)
-
-        self.full_path_check = QCheckBox("Show Full Path")
-        self.full_path_check.toggled.connect(self.apply_show_full_path_setting)
-        row2.addWidget(self.full_path_check)
-
-        self.size_format_combo = QComboBox()
-        self.size_format_combo.addItems(["No Size", "Bytes", "Human Readable"])
-        self.size_format_combo.setCurrentIndex(2)
-        self.size_format_combo.currentTextChanged.connect(self.apply_size_format_setting)
-        row2.addWidget(QLabel("Size Format:"))
-        row2.addWidget(self.size_format_combo)
-        row2.addStretch()
-        tools_layout.addLayout(row2)
-        main_layout.addWidget(tools_group)
+        options_widget = QWidget()
+        options_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        options_widget.setLayout(options_layout)
+        main_layout.addWidget(options_widget)
 
         self.view = QTableView()
         self.view.setModel(self.proxy_model)
@@ -614,6 +669,28 @@ class FileSearchGUI(QMainWindow):
         self.view.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.view.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
         self.view.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self.view.setShowGrid(False)
+        self.view.setAlternatingRowColors(True)
+        self.view.verticalHeader().setVisible(False)
+        self.view.setStyleSheet(
+            """
+            QTableView {
+                background-color: #FFFFFF;
+                alternate-background-color: #F8FAFC;
+                border: 1px solid #E5E7EB;
+                gridline-color: #EEF2F7;
+                selection-background-color: #E8F1FF;
+                selection-color: #0F172A;
+            }
+            QTableView::item {
+                border-right: 1px solid rgba(148, 163, 184, 0.08);
+                padding: 4px 6px;
+            }
+            QTableView::item:selected {
+                border-right: 1px solid rgba(59, 130, 246, 0.10);
+            }
+            """
+        )
         self.rename_delegate = RenameDelegate(self.view)
         self.view.setItemDelegateForColumn(0, self.rename_delegate)
         self.view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -632,7 +709,22 @@ class FileSearchGUI(QMainWindow):
         self.view.setColumnWidth(0, 260)
         self.view.setColumnWidth(1, 520)
         header.setStyleSheet(
-            "QHeaderView::section { background-color: #f5f5f5; padding: 4px; border: 1px solid #d0d0d0; font-weight: bold; }"
+            """
+            QHeaderView::section {
+                background-color: #F8FAFC;
+                padding: 4px 6px;
+                border: 0;
+                border-bottom: 1px solid #E5E7EB;
+                border-right: 1px solid rgba(148, 163, 184, 0.10);
+                font-weight: bold;
+            }
+            QHeaderView::section:first {
+                border-left: 0;
+            }
+            QHeaderView::section:last {
+                border-right: 0;
+            }
+            """
         )
         header.sectionClicked.connect(self.handle_header_sort)
         main_layout.addWidget(self.view)
@@ -640,10 +732,50 @@ class FileSearchGUI(QMainWindow):
         self.status_label = QLabel("Ready")
         main_layout.addWidget(self.status_label)
 
+    def _create_menu_bar(self) -> None:
+        menu_bar = self.menuBar()
+
+        file_menu = menu_bar.addMenu("File")
+        self.quit_action = QAction("Quit", self)
+        self.quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+        self.quit_action.triggered.connect(self.close)
+        file_menu.addAction(self.quit_action)
+
+        options_menu = menu_bar.addMenu("Options")
+        self.show_full_path_action = QAction("Show Full Path", self)
+        self.show_full_path_action.setCheckable(True)
+        self.show_full_path_action.toggled.connect(self.apply_show_full_path_setting)
+        options_menu.addAction(self.show_full_path_action)
+
+        size_format_menu = options_menu.addMenu("Size Format")
+        self.size_format_action_group = QActionGroup(self)
+        self.size_format_action_group.setExclusive(True)
+        self.size_format_actions: dict[str, QAction] = {}
+        for label in ["No Size", "Bytes", "Human Readable"]:
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked=False, value=label: self.apply_size_format_setting(value))
+            self.size_format_action_group.addAction(action)
+            size_format_menu.addAction(action)
+            self.size_format_actions[label] = action
+
+        help_menu = menu_bar.addMenu("Help")
+        self.instructions_action = QAction("Instructions", self)
+        self.instructions_action.triggered.connect(self.show_instructions)
+        help_menu.addAction(self.instructions_action)
+
+        self.about_action = QAction("About", self)
+        self.about_action.triggered.connect(self.show_about)
+        help_menu.addAction(self.about_action)
+
     def browse_path(self):
         directory = QFileDialog.getExistingDirectory(self, "Select Directory", self.path_input.text())
         if directory:
             self.path_input.setText(directory)
+
+    def focus_search_input(self) -> None:
+        self.pattern_input.setFocus(Qt.FocusReason.OtherFocusReason)
+        self.pattern_input.selectAll()
 
     def _register_enter_activated_button(self, button: QPushButton) -> None:
         self._enter_activates_buttons.add(button)
@@ -678,11 +810,7 @@ class FileSearchGUI(QMainWindow):
             return
 
         primary_column, primary_order = sort_columns[0]
-        indicator_order = (
-            Qt.SortOrder.DescendingOrder
-            if primary_order == Qt.SortOrder.AscendingOrder
-            else Qt.SortOrder.AscendingOrder
-        )
+        indicator_order = Qt.SortOrder.DescendingOrder if primary_order == Qt.SortOrder.AscendingOrder else Qt.SortOrder.AscendingOrder
         self.view.horizontalHeader().setSortIndicator(primary_column, indicator_order)
 
     def perform_search(self):
@@ -695,8 +823,8 @@ class FileSearchGUI(QMainWindow):
 
         self.model.clear()
         self.model.root_path = path
-        self.model.set_show_full_path(self.full_path_check.isChecked())
-        self.model.set_size_format(self.size_format_combo.currentText())
+        self.model.set_show_full_path(self.show_full_path_action.isChecked())
+        self.model.set_size_format(self.current_size_format())
         self._search_failed = False
 
         self.search_btn.setEnabled(False)
@@ -707,10 +835,10 @@ class FileSearchGUI(QMainWindow):
         min_file_size = None
         max_file_size = None
 
-        if self.min_file_size.text():
+        if self.min_file_size.value() > 0:
             min_file_size = float(self.min_file_size.text()) * unit_multiplier[self.min_size_unit.currentText()]
 
-        if self.max_file_size.text():
+        if self.max_file_size.value() > 0:
             max_file_size = float(self.max_file_size.text()) * unit_multiplier[self.max_size_unit.currentText()]
 
         search_type = ["both", "files", "folders"][self.search_type_combo.currentIndex()]
@@ -769,15 +897,14 @@ class FileSearchGUI(QMainWindow):
         if settings.path:
             self.path_input.setText(settings.path)
         self.depth_spin.setValue(settings.depth)
-        self.full_path_check.setChecked(settings.full_path)
+        self.show_full_path_action.setChecked(settings.full_path)
         self._set_combo_text(self.search_type_combo, settings.search_type)
         self._set_combo_text(self.pattern_type_combo, settings.pattern_match)
         self._set_combo_text(self.quick_filter_combo, settings.selected_quick_filter)
         self._set_combo_text(self.min_size_unit, settings.min_file_size_unit)
         self._set_combo_text(self.max_size_unit, settings.max_file_size_unit)
-        self._set_combo_text(self.size_format_combo, settings.size_format)
-        self.apply_show_full_path_setting(self.full_path_check.isChecked())
-        self.apply_size_format_setting(self.size_format_combo.currentText())
+        self.apply_show_full_path_setting(self.show_full_path_action.isChecked())
+        self.apply_size_format_setting(settings.size_format)
         self._loading_settings = False
 
     def save_settings(self):
@@ -785,14 +912,14 @@ class FileSearchGUI(QMainWindow):
             AppSettings(
                 path=self.path_input.text(),
                 depth=self.depth_spin.value(),
-                full_path=self.full_path_check.isChecked(),
+                full_path=self.show_full_path_action.isChecked(),
                 search_type=self.search_type_combo.currentText(),
                 pattern_match=self.pattern_type_combo.currentText(),
                 selected_quick_filter=self.quick_filter_combo.currentText() or NO_QUICK_FILTER,
                 quick_filters=self.quick_filters,
                 min_file_size_unit=self.min_size_unit.currentText(),
                 max_file_size_unit=self.max_size_unit.currentText(),
-                size_format=self.size_format_combo.currentText(),
+                size_format=self.current_size_format(),
             )
         )
 
@@ -802,9 +929,37 @@ class FileSearchGUI(QMainWindow):
             self.save_settings()
 
     def apply_size_format_setting(self, size_format: str):
+        self._set_size_format_action(size_format)
         self.model.set_size_format(size_format)
         if not self._loading_settings:
             self.save_settings()
+
+    def current_size_format(self) -> str:
+        checked_action = self.size_format_action_group.checkedAction()
+        return checked_action.text() if checked_action is not None else "Human Readable"
+
+    def _set_size_format_action(self, size_format: str) -> None:
+        action = self.size_format_actions.get(size_format)
+        if action is not None:
+            action.setChecked(True)
+
+    def show_instructions(self) -> None:
+        QMessageBox.information(
+            self,
+            "Instructions",
+            "1. Choose a search path.\n"
+            "2. Enter text or a regular expression to search for.\n"
+            "3. Optionally adjust filters in Search Options.\n"
+            "4. Press Search to begin.\n"
+            "5. Use the context menu on results to open, reveal, or rename items.",
+        )
+
+    def show_about(self) -> None:
+        QMessageBox.information(
+            self,
+            "About fy_search",
+            "fy_search\nA cross-platform desktop file search application built with Python and PySide6.",
+        )
 
     @staticmethod
     def _set_combo_text(combo: QComboBox, value: str) -> None:

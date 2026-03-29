@@ -65,6 +65,13 @@ class AppSettingsTests(unittest.TestCase):
             with patch("fy_search.settings.get_settings_path", return_value=settings_path):
                 self.assertEqual(load_settings().selected_quick_filter, NO_QUICK_FILTER)
 
+    def test_legacy_all_quick_filter_loads_as_everything(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            settings_path = Path(tmp_dir) / "settings.json"
+            settings_path.write_text(json.dumps({"selected_quick_filter": "All"}), encoding="utf-8")
+            with patch("fy_search.settings.get_settings_path", return_value=settings_path):
+                self.assertEqual(load_settings().selected_quick_filter, NO_QUICK_FILTER)
+
     def test_invalid_quick_filters_fall_back_to_defaults(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             settings_path = Path(tmp_dir) / "settings.json"
