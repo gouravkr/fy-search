@@ -5,7 +5,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(SPECPATH).resolve().parents[1]
 
 a = Analysis(
-    [str(PROJECT_ROOT / "fy_search" / "__main__.py")],
+    [str(PROJECT_ROOT / "packaging" / "pyinstaller" / "run_fy_search.py")],
     pathex=[str(PROJECT_ROOT)],
     binaries=[],
     datas=[],

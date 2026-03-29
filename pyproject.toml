@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fy-search"
-version = "0.1.0"
+version = "0.1.01a"
 description = "A cross-platform desktop file search application built with Python and PySide6"
 readme = "README.md"
 requires-python = ">=3.13"
