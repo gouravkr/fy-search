@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .file_icons import DEFAULT_FILE_ICON, FILE_ICON_MAP, FOLDER_ICON, TYPE_FILE_ICON, normalized_extension
 from .search import SearchOptions, iter_search_results
 from .settings import NO_QUICK_FILTER, AppSettings, QuickFilters, load_settings, save_settings
 
@@ -112,6 +113,7 @@ class SearchResultModel(QAbstractTableModel):
     """Custom model to store and manage search results."""
 
     SORT_ROLE = Qt.ItemDataRole.UserRole
+    _icon_cache: dict[tuple[str, str], object] = {}
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -169,8 +171,11 @@ class SearchResultModel(QAbstractTableModel):
             if col == 5:
                 return self._format_datetime(row_data.modified_on)
 
-        if role == Qt.ItemDataRole.DecorationRole and col == 2:
-            return self._type_icon(row_data.is_dir)
+        if role == Qt.ItemDataRole.DecorationRole:
+            if col == 0:
+                return self._name_icon(row_data)
+            if col == 2:
+                return self._type_icon(row_data.is_dir)
 
         if role == self.SORT_ROLE:
             if col == 0:
@@ -227,9 +232,24 @@ class SearchResultModel(QAbstractTableModel):
         return self._locale.toString(dt, QLocale.FormatType.ShortFormat)
 
     def _type_icon(self, is_dir: bool):
-        icon_name = "fa5s.folder" if is_dir else "fa5s.file-alt"
-        color = "#D97706" if is_dir else "#64748B"
-        return qta.icon(icon_name, color=color)
+        icon_name, color = FOLDER_ICON if is_dir else TYPE_FILE_ICON
+        return self._cached_icon(icon_name, color)
+
+    def _name_icon(self, row: ResultRow):
+        if row.is_dir:
+            icon_name, color = FOLDER_ICON
+            return self._cached_icon(icon_name, color)
+
+        extension = normalized_extension(row.name)
+        icon_name, color = FILE_ICON_MAP.get(extension, DEFAULT_FILE_ICON)
+        return self._cached_icon(icon_name, color)
+
+    @classmethod
+    def _cached_icon(cls, icon_name: str, color: str):
+        cache_key = (icon_name, color)
+        if cache_key not in cls._icon_cache:
+            cls._icon_cache[cache_key] = qta.icon(icon_name, color=color)
+        return cls._icon_cache[cache_key]
 
     def clear(self):
         self.beginResetModel()

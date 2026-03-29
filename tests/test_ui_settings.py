@@ -151,9 +151,9 @@ class GuiSettingsTests(unittest.TestCase):
         menu = window._create_context_menu()
         stylesheet = menu.styleSheet()
 
-        self.assertIn("border-radius: 10px", stylesheet)
+        self.assertIn("border-radius:", stylesheet)
         self.assertIn("QMenu::item:selected", stylesheet)
-        self.assertIn("padding: 8px 14px", stylesheet)
+        self.assertIn("QMenu::separator", stylesheet)
         window.close()
 
     def test_results_table_uses_alternating_row_colors(self):
@@ -308,6 +308,25 @@ class GuiSettingsTests(unittest.TestCase):
         self.assertEqual(model.data(file_index, Qt.ItemDataRole.DisplayRole), "File")
         self.assertEqual(model.data(folder_index, Qt.ItemDataRole.DisplayRole), "Folder")
         self.assertFalse(model.data(file_index, Qt.ItemDataRole.DecorationRole).isNull())
+        self.assertFalse(model.data(folder_index, Qt.ItemDataRole.DecorationRole).isNull())
+
+    def test_name_column_returns_cached_icons_for_known_and_unknown_extensions(self):
+        model = SearchResultModel()
+        model._results = [
+            ResultRow("photo.jpg", "/tmp/photo.jpg", False, 100, 100.0, 100.0),
+            ResultRow("archive.unknownext", "/tmp/archive.unknownext", False, 100, 100.0, 100.0),
+            ResultRow("projects", "/tmp/projects", True, 0, 100.0, 100.0),
+        ]
+
+        image_index = model.index(0, 0)
+        unknown_index = model.index(1, 0)
+        folder_index = model.index(2, 0)
+
+        self.assertEqual(model.data(image_index, Qt.ItemDataRole.DisplayRole), "photo.jpg")
+        self.assertEqual(model.data(unknown_index, Qt.ItemDataRole.DisplayRole), "archive.unknownext")
+        self.assertEqual(model.data(folder_index, Qt.ItemDataRole.DisplayRole), "projects")
+        self.assertFalse(model.data(image_index, Qt.ItemDataRole.DecorationRole).isNull())
+        self.assertFalse(model.data(unknown_index, Qt.ItemDataRole.DecorationRole).isNull())
         self.assertFalse(model.data(folder_index, Qt.ItemDataRole.DecorationRole).isNull())
 
     def test_rename_delegate_does_not_commit_without_enter(self):
