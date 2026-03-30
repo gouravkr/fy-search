@@ -69,7 +69,8 @@ class SearchTests(unittest.TestCase):
             results = list(iter_search_results(options))
 
             self.assertEqual(len(results), 1)
-            self.assertTrue(results[0].endswith("notes.txt"))
+            self.assertTrue(results[0].path.endswith("notes.txt"))
+            self.assertFalse(results[0].is_dir)
 
     def test_iter_search_results_respects_days_filter(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -113,4 +114,26 @@ class SearchTests(unittest.TestCase):
             results = list(iter_search_results(options))
 
             self.assertEqual(len(results), 1)
-            self.assertTrue(results[0].endswith("photo.JPG"))
+            self.assertTrue(results[0].path.endswith("photo.JPG"))
+
+    def test_iter_search_results_includes_stat_metadata_for_matches(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = Path(tmp_dir) / "notes.txt"
+            file_path.write_text("notes", encoding="utf-8")
+
+            options = SearchOptions(
+                root_path=os.fspath(tmp_dir),
+                pattern="notes",
+                use_regex=False,
+                max_depth=None,
+                days=None,
+                search_type="files",
+                min_file_size=None,
+                max_file_size=None,
+                quick_filter_extensions=(),
+            )
+
+            result = next(iter(iter_search_results(options)))
+
+            self.assertEqual(result.name, "notes.txt")
+            self.assertEqual(result.stat_result.st_size, 5)

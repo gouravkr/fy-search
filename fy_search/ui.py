@@ -8,7 +8,7 @@ from typing import List
 
 import qtawesome as qta
 from PySide6.QtCore import QAbstractTableModel, QDateTime, QDir, QEvent, QLocale, QModelIndex, QSortFilterProxyModel, Qt, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QKeyEvent, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFocusEvent, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QApplication,
@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from .file_icons import DEFAULT_FILE_ICON, FILE_ICON_MAP, FOLDER_ICON, TYPE_FILE_ICON, normalized_extension
-from .search import SearchOptions, iter_search_results
+from .search import SearchOptions, SearchResult, iter_search_results
 from .settings import NO_QUICK_FILTER, AppSettings, QuickFilters, load_settings, save_settings
 
 
@@ -48,9 +48,18 @@ class ResultRow:
     size_bytes: float
     created_on: float
     modified_on: float
+    display_path: str | None = None
+    display_size: str | None = None
+    display_created_on: str | None = None
+    display_modified_on: str | None = None
+    sort_name: str | None = None
+    sort_extension: str | None = None
+    sort_full_path: str | None = None
 
     @property
     def extension(self) -> str:
+        if self.sort_extension is not None:
+            return self.sort_extension
         if self.is_dir:
             return ""
         return normalized_extension(self.name)
@@ -129,6 +138,7 @@ class SearchResultModel(QAbstractTableModel):
         self.root_path = ""
         self.size_format = "Human Readable"
         self._locale = QLocale.system()
+        self._size_units = ("B", "KB", "MB", "GB", "TB")
 
     def rowCount(self, parent=QModelIndex()):
         return len(self._results)
@@ -143,65 +153,20 @@ class SearchResultModel(QAbstractTableModel):
         row_data = self._results[index.row()]
         col = index.column()
 
-        if role == Qt.ItemDataRole.DisplayRole:
-            if col == 0:
-                return row_data.name
-            if col == 1:
-                return row_data.extension
-            if col == 2:
-                dir_path = os.path.dirname(row_data.full_path)
-                if self.show_full_path:
-                    return dir_path
-                try:
-                    return os.path.relpath(dir_path, self.root_path)
-                except ValueError:
-                    return dir_path
-            if col == 3:
-                return row_data.display_type
-            if col == 4:
-                return self._format_size(row_data)
-            if col == 5:
-                return self._format_datetime(row_data.created_on)
-            if col == 6:
-                return self._format_datetime(row_data.modified_on)
-
-        if role == Qt.ItemDataRole.EditRole:
-            if col == 0:
-                return row_data.name
-            if col == 1:
-                return row_data.extension
-            if col == 2:
-                return row_data.full_path
-            if col == 3:
-                return row_data.display_type
-            if col == 4:
-                return self._format_size(row_data)
-            if col == 5:
-                return self._format_datetime(row_data.created_on)
-            if col == 6:
-                return self._format_datetime(row_data.modified_on)
-
-        if role == Qt.ItemDataRole.DecorationRole:
-            if col == 0:
-                return self._name_icon(row_data)
-            if col == 3:
-                return self._type_icon(row_data.is_dir)
+        if col in (2, 4, 5, 6):
+            self._ensure_row_display_cache(row_data)
 
         if role == self.SORT_ROLE:
-            if col == 0:
-                return row_data.name.lower()
-            if col == 1:
-                return row_data.extension
-            if col == 2:
-                return row_data.full_path.lower()
-            if col == 3:
-                return row_data.is_dir
-            if col == 4:
-                return row_data.size_bytes if not row_data.is_dir else -1
-            if col == 5:
-                return row_data.created_on
-            if col == 6:
-                return row_data.modified_on
+            return self._sort_value(row_data, col)
+
+        if role == Qt.ItemDataRole.DisplayRole:
+            return self._display_value(row_data, col)
+
+        if role == Qt.ItemDataRole.EditRole:
+            return self._edit_value(row_data, col)
+
+        if role == Qt.ItemDataRole.DecorationRole:
+            return self._decoration_value(row_data, col)
 
         if role == Qt.ItemDataRole.ForegroundRole and row_data.is_dir:
             return QColor(34, 139, 34)
@@ -225,6 +190,116 @@ class SearchResultModel(QAbstractTableModel):
             flags |= Qt.ItemFlag.ItemIsEditable
         return flags
 
+    def _display_value(self, row: ResultRow, col: int):
+        if col == 0:
+            return row.name
+        if col == 1:
+            return row.extension
+        if col == 2:
+            return row.display_path
+        if col == 3:
+            return row.display_type
+        if col == 4:
+            return row.display_size
+        if col == 5:
+            return row.display_created_on
+        if col == 6:
+            return row.display_modified_on
+        return None
+
+    def _edit_value(self, row: ResultRow, col: int):
+        if col == 0:
+            return row.name
+        if col == 1:
+            return row.extension
+        if col == 2:
+            return row.full_path
+        if col == 3:
+            return row.display_type
+        if col == 4:
+            return row.display_size
+        if col == 5:
+            return row.display_created_on
+        if col == 6:
+            return row.display_modified_on
+        return None
+
+    def _decoration_value(self, row: ResultRow, col: int):
+        if col == 0:
+            return self._name_icon(row)
+        if col == 3:
+            return self._type_icon(row.is_dir)
+        return None
+
+    def _sort_value(self, row: ResultRow, col: int):
+        if col == 0:
+            return row.sort_name if row.sort_name is not None else row.name.lower()
+        if col == 1:
+            return row.extension
+        if col == 2:
+            return row.sort_full_path if row.sort_full_path is not None else row.full_path.lower()
+        if col == 3:
+            return row.is_dir
+        if col == 4:
+            return row.size_bytes if not row.is_dir else -1
+        if col == 5:
+            return row.created_on
+        if col == 6:
+            return row.modified_on
+        return None
+
+    def _format_size_value(self, is_dir: bool, size_bytes: float) -> str:
+        if self.size_format == "No Size" or is_dir:
+            return "-" if is_dir else ""
+
+        size = size_bytes
+        if self.size_format == "Bytes":
+            return f"{int(size):,} B"
+
+        for unit in self._size_units:
+            if size < 999:
+                return f"{int(size)} {unit}" if unit == "B" else f"{size:.2f} {unit}"
+            size /= 1024
+        return f"{size:.2f} TB"
+
+    def _format_path_value(self, full_path: str) -> str:
+        dir_path = os.path.dirname(full_path)
+        if self.show_full_path:
+            return dir_path
+
+        try:
+            return os.path.relpath(dir_path, self.root_path)
+        except ValueError:
+            return dir_path
+
+    def _refresh_row_display_cache(self, row: ResultRow) -> None:
+        row.display_path = self._format_path_value(row.full_path)
+        row.display_size = self._format_size_value(row.is_dir, row.size_bytes)
+        row.display_created_on = self._format_datetime(row.created_on)
+        row.display_modified_on = self._format_datetime(row.modified_on)
+
+    def _refresh_row_sort_cache(self, row: ResultRow) -> None:
+        row.sort_name = row.name.lower()
+        row.sort_extension = "" if row.is_dir else normalized_extension(row.name)
+        row.sort_full_path = row.full_path.lower()
+
+    def _ensure_row_display_cache(self, row: ResultRow) -> None:
+        if (
+            row.display_path is None
+            or row.display_size is None
+            or row.display_created_on is None
+            or row.display_modified_on is None
+        ):
+            self._refresh_row_display_cache(row)
+
+    def _refresh_path_cache(self) -> None:
+        for row in self._results:
+            row.display_path = self._format_path_value(row.full_path)
+
+    def _refresh_size_cache(self) -> None:
+        for row in self._results:
+            row.display_size = self._format_size_value(row.is_dir, row.size_bytes)
+
     def _format_size(self, row: ResultRow):
         if self.size_format == "No Size" or row.is_dir:
             return "-" if row.is_dir else ""
@@ -233,8 +308,8 @@ class SearchResultModel(QAbstractTableModel):
         if self.size_format == "Bytes":
             return f"{int(size):,} B"
 
-        for unit in ["B", "KB", "MB", "GB", "TB"]:
-            if size < 930:
+        for unit in self._size_units:
+            if size < 999:
                 return f"{int(size)} {unit}" if unit == "B" else f"{size:.2f} {unit}"
             size /= 1024
         return f"{size:.2f} TB"
@@ -273,6 +348,7 @@ class SearchResultModel(QAbstractTableModel):
             return
 
         self.show_full_path = show_full_path
+        self._refresh_path_cache()
         self._emit_column_changed(2)
 
     def set_size_format(self, size_format: str):
@@ -280,6 +356,7 @@ class SearchResultModel(QAbstractTableModel):
             return
 
         self.size_format = size_format
+        self._refresh_size_cache()
         self._emit_column_changed(4)
 
     def _emit_column_changed(self, column: int):
@@ -290,24 +367,61 @@ class SearchResultModel(QAbstractTableModel):
         bottom_right = self.index(len(self._results) - 1, column)
         self.dataChanged.emit(top_left, bottom_right, [Qt.ItemDataRole.DisplayRole])
 
-    def add_result(self, result_path: str):
-        try:
+    def _row_from_result(self, result: SearchResult | str) -> ResultRow:
+        if isinstance(result, SearchResult):
+            result_path = result.path
+            is_dir = result.is_dir
+            stat = result.stat_result
+            name = result.name
+        else:
+            result_path = result
             is_dir = os.path.isdir(result_path)
             stat = os.stat(result_path)
-            new_row = ResultRow(
-                name=os.path.basename(result_path),
-                full_path=result_path,
-                is_dir=is_dir,
-                size_bytes=stat.st_size if not is_dir else 0,
-                created_on=os.path.getctime(result_path),
-                modified_on=stat.st_mtime,
-            )
+            name = os.path.basename(result_path)
 
+        row = ResultRow(
+            name=name,
+            full_path=result_path,
+            is_dir=is_dir,
+            size_bytes=stat.st_size if not is_dir else 0,
+            created_on=stat.st_ctime,
+            modified_on=stat.st_mtime,
+        )
+        self._refresh_row_display_cache(row)
+        self._refresh_row_sort_cache(row)
+        return row
+
+    def add_result(self, result: SearchResult | str):
+        try:
+            new_row = self._row_from_result(result)
             self.beginInsertRows(QModelIndex(), len(self._results), len(self._results))
             self._results.append(new_row)
             self.endInsertRows()
         except OSError:
             pass
+
+    def add_results(self, results: list[SearchResult | str]):
+        if not results:
+            return
+
+        try:
+            new_rows = [self._row_from_result(result) for result in results]
+        except OSError:
+            new_rows = []
+            for result in results:
+                try:
+                    new_rows.append(self._row_from_result(result))
+                except OSError:
+                    continue
+
+        if not new_rows:
+            return
+
+        start_row = len(self._results)
+        end_row = start_row + len(new_rows) - 1
+        self.beginInsertRows(QModelIndex(), start_row, end_row)
+        self._results.extend(new_rows)
+        self.endInsertRows()
 
     def setData(self, index, value, role=Qt.ItemDataRole.EditRole):
         if role != Qt.ItemDataRole.EditRole or not index.isValid() or index.column() != 0:
@@ -333,6 +447,8 @@ class SearchResultModel(QAbstractTableModel):
 
         row_data.name = new_name
         row_data.full_path = new_full_path
+        self._refresh_row_display_cache(row_data)
+        self._refresh_row_sort_cache(row_data)
         self.dataChanged.emit(
             self.index(index.row(), 0),
             self.index(index.row(), 2),
@@ -348,25 +464,27 @@ class MultiSortProxyModel(QSortFilterProxyModel):
         super().__init__(parent)
         self._sort_columns: list[tuple[int, Qt.SortOrder]] = []
 
-    def sort(self, column, order=Qt.SortOrder.AscendingOrder):
-        if column < 0:
-            self._sort_columns = []
-            self.invalidate()
-            return
-
-        self._sort_columns = [(column, order)]
-        self.invalidate()
-        super().sort(column, Qt.SortOrder.AscendingOrder)
-
-    def append_sort_column(self, column, order):
-        self._sort_columns = [(c, o) for c, o in self._sort_columns if c != column]
-        self._sort_columns.append((column, order))
+    def _apply_sort_columns(self) -> None:
         if self._sort_columns:
-            primary_column, primary_order = self._sort_columns[0]
+            primary_column, _primary_order = self._sort_columns[0]
             self.invalidate()
             super().sort(primary_column, Qt.SortOrder.AscendingOrder)
         else:
             self.invalidate()
+
+    def sort(self, column, order=Qt.SortOrder.AscendingOrder):
+        if column < 0:
+            self._sort_columns = []
+            self._apply_sort_columns()
+            return
+
+        self._sort_columns = [(column, order)]
+        self._apply_sort_columns()
+
+    def append_sort_column(self, column, order):
+        self._sort_columns = [(c, o) for c, o in self._sort_columns if c != column]
+        self._sort_columns.append((column, order))
+        self._apply_sort_columns()
 
     def toggle_sort_column(self, column, add_to_existing=False):
         current_order = next((order for c, order in self._sort_columns if c == column), None)
@@ -383,6 +501,23 @@ class MultiSortProxyModel(QSortFilterProxyModel):
 
         source = self.sourceModel()
         sort_role = self.sortRole()
+
+        if isinstance(source, SearchResultModel) and sort_role == SearchResultModel.SORT_ROLE:
+            left_row = source._results[left.row()]
+            right_row = source._results[right.row()]
+
+            for column, order in self._sort_columns:
+                left_value = source._sort_value(left_row, column)
+                right_value = source._sort_value(right_row, column)
+
+                if left_value == right_value:
+                    continue
+
+                if order == Qt.SortOrder.AscendingOrder:
+                    return left_value < right_value
+                return left_value > right_value
+
+            return left.row() < right.row()
 
         for column, order in self._sort_columns:
             left_value = source.data(left.siblingAtColumn(column), sort_role)
@@ -406,26 +541,39 @@ class DirectoryPathCompleter(QCompleter):
 
         model = QFileSystemModel(parent)
         model.setFilter(QDir.Filter.AllDirs | QDir.Filter.NoDotAndDotDot | QDir.Filter.Drives)
-        model.setRootPath(QDir.rootPath())
         self.setModel(model)
         self.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self._root_path_initialized = False
+
+    def ensure_root_path_initialized(self, *_args) -> None:
+        if self._root_path_initialized:
+            return
+
+        model = self.model()
+        if isinstance(model, QFileSystemModel):
+            model.setRootPath(QDir.rootPath())
+            self._root_path_initialized = True
 
     def pathFromIndex(self, index):
+        self.ensure_root_path_initialized()
         model = self.model()
         if isinstance(model, QFileSystemModel):
             return QDir.toNativeSeparators(model.filePath(index))
         return super().pathFromIndex(index)
 
     def splitPath(self, path):
+        self.ensure_root_path_initialized()
         expanded_path = os.path.expanduser(path)
         normalized_path = QDir.fromNativeSeparators(expanded_path)
         return super().splitPath(normalized_path)
 
 
 class SearchWorker(QThread):
+    RESULT_BATCH_SIZE = 10
+
     finished = Signal()
-    result_found = Signal(str)
+    results_found = Signal(object)
     progress = Signal(int, int)
     error = Signal(str)
 
@@ -437,16 +585,28 @@ class SearchWorker(QThread):
     def request_cancel(self):
         self.cancel_requested = True
 
+    def _emit_batch(self, batch: list[SearchResult]) -> None:
+        if batch:
+            self.results_found.emit(batch.copy())
+
     def run(self):
+        pending_results: list[SearchResult] = []
         try:
-            for result_path in iter_search_results(
+            for result in iter_search_results(
                 self.options,
                 progress_callback=self.progress.emit,
                 cancel_callback=lambda: self.cancel_requested,
             ):
+                pending_results.append(result)
+                if len(pending_results) >= self.RESULT_BATCH_SIZE:
+                    self._emit_batch(pending_results)
+                    pending_results.clear()
+
                 if self.cancel_requested:
+                    self._emit_batch(pending_results)
                     return
-                self.result_found.emit(result_path)
+
+            self._emit_batch(pending_results)
         except Exception as exc:
             self.error.emit(str(exc))
         finally:
@@ -459,12 +619,14 @@ class FileSearchGUI(QMainWindow):
         self.setWindowTitle("fy_search")
         self.setGeometry(100, 100, 1200, 700)
         self._search_failed = False
+        self._search_in_progress = False
         self._loading_settings = False
 
         self.model = SearchResultModel()
         self.proxy_model = MultiSortProxyModel()
         self.proxy_model.setSourceModel(self.model)
         self.proxy_model.setSortRole(SearchResultModel.SORT_ROLE)
+        self.proxy_model.setDynamicSortFilter(True)
         self.cancel_search_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self.cancel_search_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self.cancel_search_shortcut.activated.connect(self.cancel_search)
@@ -570,6 +732,8 @@ class FileSearchGUI(QMainWindow):
 
         self.path_completer = DirectoryPathCompleter(self)
         self.path_input.setCompleter(self.path_completer)
+        self.path_input.textEdited.connect(self.path_completer.ensure_root_path_initialized)
+        self.path_input.installEventFilter(self)
         top_controls_layout.addWidget(self.path_input, 5)
         self.browse_btn = QPushButton("")
         self.browse_btn.setIcon(qta.icon("fa5s.folder-open", color="#475569"))
@@ -817,6 +981,13 @@ class FileSearchGUI(QMainWindow):
 
     def eventFilter(self, watched, event):
         if (
+            watched is self.path_input
+            and event.type() == QEvent.Type.FocusIn
+            and isinstance(event, QFocusEvent)
+        ):
+            self.path_completer.ensure_root_path_initialized()
+
+        if (
             watched in self._enter_activates_buttons
             and event.type() == QEvent.Type.KeyPress
             and isinstance(event, QKeyEvent)
@@ -833,10 +1004,17 @@ class FileSearchGUI(QMainWindow):
         header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         self.status_label.setText("Sort reset to default order")
 
+    def _resume_dynamic_sorting(self) -> None:
+        self.proxy_model.setDynamicSortFilter(True)
+        if self.proxy_model._sort_columns:
+            self.proxy_model._apply_sort_columns()
+
     def handle_header_sort(self, column):
         modifiers = QApplication.keyboardModifiers()
         add_to_existing = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
         self.proxy_model.toggle_sort_column(column, add_to_existing=add_to_existing)
+        if not self._search_in_progress:
+            self.proxy_model.setDynamicSortFilter(True)
 
         sort_columns = self.proxy_model._sort_columns
         if not sort_columns:
@@ -860,6 +1038,8 @@ class FileSearchGUI(QMainWindow):
         self.model.set_show_full_path(self.show_full_path_action.isChecked())
         self.model.set_size_format(self.current_size_format())
         self._search_failed = False
+        self._search_in_progress = True
+        self.proxy_model.setDynamicSortFilter(False)
 
         self.search_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
@@ -889,7 +1069,7 @@ class FileSearchGUI(QMainWindow):
         )
 
         self.worker = SearchWorker(options)
-        self.worker.result_found.connect(self.model.add_result)
+        self.worker.results_found.connect(self.model.add_results)
         self.worker.progress.connect(self.update_progress)
         self.worker.error.connect(self.handle_search_error)
         self.worker.finished.connect(self.search_finished)
@@ -908,6 +1088,8 @@ class FileSearchGUI(QMainWindow):
         QMessageBox.warning(self, "Search Error", message)
 
     def search_finished(self):
+        self._search_in_progress = False
+        self._resume_dynamic_sorting()
         self.search_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
 

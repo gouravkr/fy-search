@@ -4,11 +4,12 @@ import os
 import tempfile
 
 from PySide6.QtCore import QDir, QEvent, QModelIndex, Qt
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QFocusEvent, QKeyEvent
 from PySide6.QtWidgets import QApplication
 
+from fy_search.search import SearchOptions, SearchResult
 from fy_search.settings import AppSettings, NO_QUICK_FILTER, QuickFilters
-from fy_search.ui import DirectoryPathCompleter, FileSearchGUI, RenameDelegate, RenameLineEdit, ResultRow, SearchResultModel
+from fy_search.ui import DirectoryPathCompleter, FileSearchGUI, RenameDelegate, RenameLineEdit, ResultRow, SearchResultModel, SearchWorker
 
 
 class GuiSettingsTests(unittest.TestCase):
@@ -125,6 +126,43 @@ class GuiSettingsTests(unittest.TestCase):
         self.assertEqual(window.model.data(index, Qt.ItemDataRole.DisplayRole), "1,536 B")
         window.close()
 
+    def test_data_uses_cached_path_display_value(self):
+        model = SearchResultModel()
+        model.root_path = "/tmp"
+        model.add_result(
+            SearchResult(
+                path="/tmp/sub/demo.txt",
+                name="demo.txt",
+                is_dir=False,
+                stat_result=os.stat_result((0, 0, 0, 0, 0, 0, 10, 0, 100, 100)),
+            )
+        )
+
+        index = model.index(0, 2)
+        self.assertEqual(model.data(index, Qt.ItemDataRole.DisplayRole), "sub")
+
+        with patch("fy_search.ui.os.path.relpath", side_effect=AssertionError("path should be cached")):
+            self.assertEqual(model.data(index, Qt.ItemDataRole.DisplayRole), "sub")
+            self.assertEqual(model.data(index, Qt.ItemDataRole.DisplayRole), "sub")
+
+    def test_data_uses_cached_size_display_value(self):
+        model = SearchResultModel()
+        model.add_result(
+            SearchResult(
+                path="/tmp/demo.txt",
+                name="demo.txt",
+                is_dir=False,
+                stat_result=os.stat_result((0, 0, 0, 0, 0, 0, 1536, 0, 100, 100)),
+            )
+        )
+
+        index = model.index(0, 4)
+        self.assertEqual(model.data(index, Qt.ItemDataRole.DisplayRole), "1.50 KB")
+
+        with patch.object(model, "_format_size_value", side_effect=AssertionError("size should be cached")):
+            self.assertEqual(model.data(index, Qt.ItemDataRole.DisplayRole), "1.50 KB")
+            self.assertEqual(model.data(index, Qt.ItemDataRole.EditRole), "1.50 KB")
+
     def test_menu_bar_has_file_options_and_help_menus(self):
         with patch("fy_search.ui.load_settings", return_value=AppSettings()):
             window = FileSearchGUI()
@@ -174,6 +212,7 @@ class GuiSettingsTests(unittest.TestCase):
         self.assertEqual(completer.completionMode(), completer.CompletionMode.PopupCompletion)
         self.assertTrue(completer.model().filter() & QDir.Filter.AllDirs)
         self.assertTrue(completer.model().filter() & QDir.Filter.Drives)
+        self.assertFalse(completer._root_path_initialized)
         window.close()
 
     def test_search_path_input_has_folder_icon_action(self):
@@ -216,6 +255,7 @@ class GuiSettingsTests(unittest.TestCase):
     def test_directory_path_completer_returns_full_directory_path(self):
         completer = DirectoryPathCompleter()
         root_index = completer.model().setRootPath(QDir.rootPath())
+        completer._root_path_initialized = True
         child_index = completer.model().index(QDir.rootPath())
 
         self.assertTrue(root_index.isValid())
@@ -225,7 +265,21 @@ class GuiSettingsTests(unittest.TestCase):
     def test_directory_path_completer_split_path_does_not_error(self):
         completer = DirectoryPathCompleter()
         parts = completer.splitPath(QDir.homePath())
+        self.assertTrue(completer._root_path_initialized)
         self.assertTrue(parts)
+
+    def test_path_input_focus_initializes_directory_completer(self):
+        with patch("fy_search.ui.load_settings", return_value=AppSettings()):
+            window = FileSearchGUI()
+
+        self.assertFalse(window.path_completer._root_path_initialized)
+
+        focus_event = QFocusEvent(QEvent.Type.FocusIn, Qt.FocusReason.OtherFocusReason)
+        handled = window.eventFilter(window.path_input, focus_event)
+
+        self.assertFalse(handled)
+        self.assertTrue(window.path_completer._root_path_initialized)
+        window.close()
 
     def test_escape_shortcut_cancels_running_search(self):
         with patch("fy_search.ui.load_settings", return_value=AppSettings()):
@@ -295,6 +349,105 @@ class GuiSettingsTests(unittest.TestCase):
             self.assertTrue(os.path.exists(renamed_path))
             self.assertEqual(model.data(index, Qt.ItemDataRole.DisplayRole), "new.txt")
             self.assertEqual(model.data(model.index(0, 1), Qt.ItemDataRole.DisplayRole), "txt")
+
+    def test_add_result_uses_precomputed_search_metadata_without_restatting(self):
+        model = SearchResultModel()
+        fake_stat = os.stat_result((0, 0, 0, 0, 0, 0, 42, 0, 123, 456))
+
+        with (
+            patch("fy_search.ui.os.path.isdir", side_effect=AssertionError("should not restat type")),
+            patch("fy_search.ui.os.stat", side_effect=AssertionError("should not restat path")),
+            patch("fy_search.ui.os.path.getctime", side_effect=AssertionError("should not restat ctime")),
+        ):
+            model.add_result(
+                SearchResult(
+                    path="/tmp/demo.txt",
+                    name="demo.txt",
+                    is_dir=False,
+                    stat_result=fake_stat,
+                )
+            )
+
+        self.assertEqual(model.rowCount(), 1)
+        self.assertEqual(model.data(model.index(0, 0), Qt.ItemDataRole.DisplayRole), "demo.txt")
+        self.assertEqual(model.data(model.index(0, 4), Qt.ItemDataRole.EditRole), "42 B")
+
+    def test_add_results_inserts_a_batch_in_one_operation(self):
+        model = SearchResultModel()
+        fake_stat = os.stat_result((0, 0, 0, 0, 0, 0, 42, 0, 123, 456))
+        results = [
+            SearchResult("/tmp/demo1.txt", "demo1.txt", False, fake_stat),
+            SearchResult("/tmp/demo2.txt", "demo2.txt", False, fake_stat),
+        ]
+
+        with (
+            patch.object(model, "beginInsertRows", wraps=model.beginInsertRows) as begin_insert_rows,
+            patch.object(model, "endInsertRows", wraps=model.endInsertRows) as end_insert_rows,
+        ):
+            model.add_results(results)
+
+        self.assertEqual(model.rowCount(), 2)
+        begin_insert_rows.assert_called_once()
+        end_insert_rows.assert_called_once()
+        self.assertEqual(model.data(model.index(1, 0), Qt.ItemDataRole.DisplayRole), "demo2.txt")
+
+    def test_search_worker_emits_results_in_batches(self):
+        fake_stat = os.stat_result((0, 0, 0, 0, 0, 0, 42, 0, 123, 456))
+        emitted_batches = []
+        worker = SearchWorker(
+            SearchOptions(
+                root_path="/tmp",
+                pattern="demo",
+                use_regex=False,
+                max_depth=None,
+                days=None,
+                search_type="files",
+                min_file_size=None,
+                max_file_size=None,
+                quick_filter_extensions=(),
+            )
+        )
+        worker.RESULT_BATCH_SIZE = 2
+        worker.results_found.connect(emitted_batches.append)
+
+        fake_results = [
+            SearchResult("/tmp/demo1.txt", "demo1.txt", False, fake_stat),
+            SearchResult("/tmp/demo2.txt", "demo2.txt", False, fake_stat),
+            SearchResult("/tmp/demo3.txt", "demo3.txt", False, fake_stat),
+        ]
+
+        with patch("fy_search.ui.iter_search_results", return_value=iter(fake_results)):
+            worker.run()
+
+        self.assertEqual([[item.name for item in batch] for batch in emitted_batches], [["demo1.txt", "demo2.txt"], ["demo3.txt"]])
+
+    def test_perform_search_disables_dynamic_sorting_until_finish(self):
+        with patch("fy_search.ui.load_settings", return_value=AppSettings()):
+            window = FileSearchGUI()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            window.path_input.setText(tmp_dir)
+            window.pattern_input.setText("demo")
+            window.proxy_model.sort(0, Qt.SortOrder.AscendingOrder)
+
+            with patch.object(SearchWorker, "start") as start_mock:
+                window.perform_search()
+
+            self.assertTrue(window._search_in_progress)
+            self.assertFalse(window.proxy_model.dynamicSortFilter())
+            start_mock.assert_called_once_with()
+
+            with (
+                patch.object(window.proxy_model, "_apply_sort_columns", wraps=window.proxy_model._apply_sort_columns) as apply_sort_columns,
+                patch("fy_search.ui.save_settings"),
+            ):
+                window.search_finished()
+
+            self.assertFalse(window._search_in_progress)
+            self.assertTrue(window.proxy_model.dynamicSortFilter())
+            apply_sort_columns.assert_called_once_with()
+
+        window.close()
 
     def test_extension_column_uses_compact_header_and_value(self):
         model = SearchResultModel()

@@ -23,8 +23,20 @@ class SearchOptions:
     quick_filter_extensions: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class SearchResult:
+    path: str
+    name: str
+    is_dir: bool
+    stat_result: os.stat_result
+
+
 ProgressCallback = Callable[[int, int], None]
 CancelCallback = Callable[[], bool]
+
+
+def _no_cancel() -> bool:
+    return False
 
 
 def path_matches_filters(
@@ -98,6 +110,7 @@ def iter_search_results(
     progress_callback: ProgressCallback | None = None,
     cancel_callback: CancelCallback | None = None,
 ):
+    cancel_callback = cancel_callback or _no_cancel
     compiled_regex = None
     if options.use_regex:
         try:
@@ -112,7 +125,7 @@ def iter_search_results(
     def search_directory(path: str, current_depth: int):
         nonlocal files_checked, matches_found
 
-        if cancel_callback is not None and cancel_callback():
+        if cancel_callback():
             return
 
         if options.max_depth is not None and current_depth > options.max_depth:
@@ -121,7 +134,7 @@ def iter_search_results(
         try:
             with os.scandir(path) as entries:
                 for entry in entries:
-                    if cancel_callback is not None and cancel_callback():
+                    if cancel_callback():
                         return
 
                     try:
@@ -156,8 +169,19 @@ def iter_search_results(
                         is_dir=is_dir,
                         stat_result=stat_result,
                     ):
+                        if stat_result is None:
+                            try:
+                                stat_result = entry.stat(follow_symlinks=False)
+                            except OSError:
+                                continue
+
                         matches_found += 1
-                        yield entry.path
+                        yield SearchResult(
+                            path=entry.path,
+                            name=entry.name,
+                            is_dir=is_dir,
+                            stat_result=stat_result,
+                        )
 
                     if is_dir:
                         yield from search_directory(entry.path, current_depth + 1)
