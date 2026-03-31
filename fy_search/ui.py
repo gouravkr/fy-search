@@ -171,7 +171,7 @@ class SearchResultModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ForegroundRole and row_data.is_dir:
             return QColor(34, 139, 34)
 
-        if role == Qt.ItemDataRole.TextAlignmentRole and col in (1, 4):
+        if role == Qt.ItemDataRole.TextAlignmentRole and col in (4,):
             return Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
 
         return None
