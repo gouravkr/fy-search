@@ -16,6 +16,7 @@ cmd = [
     "nuitka",
     "--standalone",
     "--onefile",
+    "--windows-console-mode=disable",
     "--jobs=10",
     "--enable-plugin=pyside6",
     "--include-package=fy_search",
