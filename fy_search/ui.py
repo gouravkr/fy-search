@@ -616,7 +616,7 @@ class SearchWorker(QThread):
 class FileSearchGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("fy_search")
+        self.setWindowTitle("FySearch")
         self.setGeometry(100, 100, 1200, 700)
         self._search_failed = False
         self._search_in_progress = False

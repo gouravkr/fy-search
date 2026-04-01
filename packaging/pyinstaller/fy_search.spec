@@ -16,6 +16,7 @@ a = Analysis(
     excludes=[],
     noarchive=False,
     optimize=0,
+    icon=[str(PROJECT_ROOT / "fy_search" / "assets" / "fysearch.png")]
 )
 pyz = PYZ(a.pure)
 
