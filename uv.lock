@@ -25,9 +25,10 @@ wheels = [
 
 [[package]]
 name = "fy-search"
-version = "0.1.1a0"
+version = "0.1.1b0"
 source = { editable = "." }
 dependencies = [
+    { name = "nuitka" },
     { name = "pyside6" },
     { name = "qtawesome" },
 ]
@@ -40,6 +41,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "nuitka", specifier = ">=4.0.7" },
     { name = "pyside6", specifier = ">=6.8" },
     { name = "qtawesome", specifier = ">=1.4.1" },
 ]
@@ -70,6 +72,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/10/2f/97589876ea9674879
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/d1/a9f36f8ecdf0fb7c9b1e78c8d7af12b8c8754e74851ac7b94a8305540fc7/macholib-1.16.4-py2.py3-none-any.whl", hash = "sha256:da1a3fa8266e30f0ce7e97c6a54eefaae8edd1e5f86f3eb8b95457cae90265ea", size = 38117, upload-time = "2025-11-22T08:28:36.939Z" },
 ]
+
+[[package]]
+name = "nuitka"
+version = "4.0.7"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/0e/2537066db2458843e4a1edfc524409069ad58a456fc4b312b18b1d327431/nuitka-4.0.7.tar.gz", hash = "sha256:26543bfed6009a466ae8608bdc643add81a497e8662e4aaf157cd00aa7fd5b9f", size = 4421537, upload-time = "2026-03-24T13:26:43.368Z" }
 
 [[package]]
 name = "packaging"
